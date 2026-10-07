@@ -317,4 +317,4 @@ Switching models, adding a species or changing a threshold means uploading weigh
 ## 9. Diagram maintenance
 
 - The diagram is drawn with draw.io's official AWS and GCP icon libraries. Open `architecture.drawio` in [app.diagrams.net](https://app.diagrams.net) or the VS Code "Draw.io Integration" extension, then export a new `architecture.png` after editing.
-- `architecture_gen.py` generated the first version. The `.drawio` file has been edited by hand since then and is now the source of truth.
+- `architecture.drawio` is the single source of truth for the diagram; always edit it rather than the PNG.

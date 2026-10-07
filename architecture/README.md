@@ -17,7 +17,7 @@ AWS is the primary cloud. It hosts authentication, the REST API, storage, the da
 | AWS | Amazon S3 (media bucket) | Original files in `uploads/`, thumbnails in `thumbnails/` |
 | AWS | Amazon EventBridge | Routes each S3 "Object Created" event to the thumbnail and tagging Lambdas (see §4) |
 | AWS | AWS Lambda (event functions) | `thumbnail`, `tagging`, `notify` |
-| AWS | Amazon DynamoDB | `Files` table and `TagIndex` table; DynamoDB Streams drive notifications |
+| AWS | Amazon DynamoDB | Single `Media` table holding file metadata and tags (§6); DynamoDB Streams drive notifications |
 | AWS | Amazon Lex V2 | Chatbot that turns natural-language queries into intents and slots |
 | AWS | Amazon SNS | Sends tag-based email notifications, filtered per subscriber |
 | AWS | AWS Secrets Manager | Holds the GCP service-account key that AWS uses to call Cloud Run |
@@ -51,15 +51,15 @@ Browser                API Gateway + upload-url λ        S3 media bucket       
 ```
 
 1. **Checksum in the browser.** The browser computes the file's **SHA-256** and calls `POST /upload-url` with the checksum, file name and content type (③).
-2. **Deduplication.** The `upload-url` Lambda looks the checksum up in the `Files` table. If it is already there, the API returns `409 Duplicate` with the existing file's URL and nothing is uploaded.
+2. **Deduplication.** The `upload-url` Lambda checks whether the `Media` table already has a `META` item for that checksum. If it is already there, the API returns `409 Duplicate` with the existing file's URL and nothing is uploaded.
 3. **Presigned URL.** For a new file, the Lambda returns a short-lived presigned **PUT** URL for `uploads/<sha256>.<ext>`. The URL is signed with the checksum (`ChecksumSHA256`), so S3 rejects any upload whose content does not match the checksum. As a backstop, `tagging` re-hashes the object and deletes it if the hash does not match its key.
 4. **Direct upload (④).** The browser PUTs the file straight to S3.
 5. **Event routing.** S3 sends an "Object Created" event to EventBridge. Two EventBridge rules, both filtered to the `uploads/` prefix, invoke the two processing Lambdas in parallel:
    - **⑤ `thumbnail`** downloads the image, resizes it while keeping the aspect ratio, compresses it with OpenCV, and writes the result to `thumbnails/`. Because the rules only match `uploads/`, writing a thumbnail does not trigger the pipeline again.
    - **⑥ `tagging`** creates a presigned **GET** URL for the object and sends it to Cloud Run (⑦). The call is authenticated with a GCP ID token minted from the service-account key held in Secrets Manager.
 6. **⑦ ⑧ Inference on GCP.** Cloud Run reads `config.json` from Cloud Storage to find the active model version, loads those weights (cached between requests), runs detection and returns per-species counts such as `{"fox": 2, "cat": 1}`. **Videos:** one frame is extracted every 10 seconds and each frame is run through the detector. The stored count for each species is the highest count seen in any single frame, so the same animal is not counted twice across frames.
-7. **⑨ Persist.** `tagging` writes the file type, the tag counts, the file URL and the thumbnail URL to DynamoDB.
-8. **⑩ Notify.** The new item appears on the DynamoDB Stream. The `notify` Lambda publishes to SNS with the species as message attributes, and each subscriber's **filter policy** decides who receives an email.
+7. **⑨ Persist.** `tagging` writes to the `Media` table in a single transaction: one `META` item (file type, file URL, thumbnail URL, colour attributes) and one `TAG#<species>` item per species with its count (§6).
+8. **⑩ Notify.** Each new `TAG#` item appears on the DynamoDB Stream. The `notify` Lambda publishes to SNS with the species as message attributes, and each subscriber's **filter policy** decides who receives an email.
 
 ## 4. Why EventBridge sits between S3 and the Lambdas
 
@@ -93,9 +93,9 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 |---|---|---|
 | Upload to cloud storage via REST or SDK | `POST /upload-url` returns a presigned PUT URL and the browser uploads straight to S3 (§3) | ③ ④ |
 | **Every upload triggers an event and a serverless function** | S3 **Object Created** → EventBridge → `thumbnail` and `tagging` Lambdas (§4) | ⑤ ⑥ |
-| Deduplication by checksum | The browser sends the SHA-256 first; `upload-url` rejects a checksum already in `Files` with `409`. The presigned PUT is bound to that checksum so the content cannot be swapped, and the conditional write `attribute_not_exists(file_id)` stops two uploads racing | ③ |
+| Deduplication by checksum | The browser sends the SHA-256 first; `upload-url` rejects a checksum that already has a `META` item in `Media` with `409`. The presigned PUT is bound to that checksum so the content cannot be swapped, and the conditional write `attribute_not_exists(file_id)` on the `META` item stops two uploads racing | ③ |
 | Thumbnail generation | The EventBridge rule for `thumbnail` matches image suffixes only (`.jpg`, `.jpeg`, `.png`). The Lambda uses OpenCV to scale the longest side to 256 px, keeping the aspect ratio, saves a JPEG at quality 70 to `thumbnails/<sha256>.jpg`, and has `s3:GetObject` on `uploads/*` and `s3:PutObject` on `thumbnails/*` | ⑤ |
-| Tag the file and save type, tags, file URL and thumbnail URL | `tagging` sends a presigned GET URL to Cloud Run and writes the result to `Files` and `TagIndex`. Because thumbnail keys are deterministic, `tagging` can store `thumb_url` without waiting for the `thumbnail` Lambda | ⑥ ⑦ ⑧ ⑨ |
+| Tag the file and save type, tags, file URL and thumbnail URL | `tagging` sends a presigned GET URL to Cloud Run and writes the result to `Media` (one `META` item plus one `TAG#` item per species). Because thumbnail keys are deterministic, `tagging` can store `thumb_url` without waiting for the `thumbnail` Lambda | ⑥ ⑦ ⑧ ⑨ |
 | Videos: **one frame every 10 seconds** | For a video, Cloud Run opens the presigned URL with OpenCV, seeks in 10-second steps (`CAP_PROP_POS_MSEC`), runs detection on each sampled frame, and keeps the highest count per species across frames | ⑦ |
 
 ### 5.3 Queries (Spec §4.3)
@@ -103,19 +103,19 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 #### Find files by tags with minimum counts
 
 - **Request:** `POST /search/tags` with `{"feral pig": 1, "cane toad": 3}`
-- **Flow:** `search` runs one `TagIndex` query per tag, for example `tag = "cane toad" AND sk >= "0003#"`. It intersects the resulting `file_id` sets (logical **AND**), then `BatchGetItem`s the matching `Files` items.
+- **Flow:** `search` runs one query per tag on the GSI `tag-count-index`, for example `tag = "cane toad" AND tag_count >= 3`. It intersects the resulting `file_id` sets (logical **AND**), then `BatchGetItem`s the matching `META` items (keys `{file_id, sk: "META"}`).
 - **Response:** thumbnail URLs for images and file URLs for videos.
 
 #### Find files by species, and find a lost pet
 
 - **By species:** `POST /search/species` with `{"species": ["cat"]}`. This is the spec's `{"cat"}` written as valid JSON. It is the query above with a minimum count of 1.
-- **Lost pet by description:** `POST /lost-pet` with `{"species": "cat", "attributes": ["orange"], "days": 14}`. `search` queries `TagIndex` for the species, keeps files where every requested colour or breed term appears in `attributes` or as a manual tag in `tags`, and keeps only those whose `created_at` falls within the last `days` days (recent sightings), newest first.
+- **Lost pet by description:** `POST /lost-pet` with `{"species": "cat", "attributes": ["orange"], "days": 14}`. `search` queries `tag-count-index` for the species and batch-gets the `META` items. It keeps a file only if every requested colour or breed term appears in its `attributes` or as a manual tag (a `TAG#<term>` item, found with the same GSI query), and keeps only those whose `created_at` falls within the last `days` days (recent sightings), newest first.
 - **Lost pet by photo:** first ⑪. The browser sends the pet photo to Cloud Run `/detect`, which returns its species and attributes without storing the image. Then it calls `POST /lost-pet` with them.
 
 #### Find the original file from a thumbnail URL
 
 - **Request:** `GET /search/original?thumb_url=<url>`
-- **Flow:** `search` parses `<sha256>` from the `thumbnails/<sha256>.jpg` path and does a `GetItem` on `Files` by primary key, then returns the original file's URL.
+- **Flow:** `search` parses `<sha256>` from the `thumbnails/<sha256>.jpg` path and does a `GetItem` on `Media` with key `{file_id, sk: "META"}`, then returns the original file's URL.
 
 #### Find files using the tags of an uploaded file (⑪)
 
@@ -128,13 +128,15 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 - **Request:** `POST /tags` with `{"url": ["<url1>", "<url2>"], "operation": 1, "tags": {"fox": 1, "cat": 2}}`
 - **`operation: 1` (add):** sets each tag's count on every listed file.
 - **`operation: 0` (remove):** deletes those tags; counts are ignored, and a tag the file does not have is silently skipped.
-- **Flow:** `edit-tags` parses each `file_id` from its URL and updates the `tags` map in `Files` and the matching `TagIndex` items in a single `TransactWriteItems`.
-- **Notifications:** the change appears on the DynamoDB Stream, so subscribers of a newly added tag are notified (5.4).
+- **Flow:** `edit-tags` parses each `file_id` from its URL. Because each tag is its own item, every change is a single-item write:
+  - add: a `Put` of `{file_id, sk: "TAG#fox", tag: "fox", tag_count: 1}`, paired in a small transaction with a `ConditionCheck` that the file's `META` item exists, so tags cannot be attached to an unknown URL
+  - remove: a `Delete` of `{file_id, sk: "TAG#fox"}`; deleting an item that does not exist is a no-op, which covers "ignore tags the file does not have"
+- **Notifications:** a newly added `TAG#` item appears on the DynamoDB Stream, so subscribers of that tag are notified (5.4).
 
 #### Delete files
 
 - **Request:** `POST /delete` with `{"url": ["<url1>", "<url2>"]}`
-- **Flow:** `delete-files` parses each `file_id`, deletes `uploads/<sha256>.<ext>` and `thumbnails/<sha256>.jpg` from S3, then deletes the `Files` item and all of its `TagIndex` items.
+- **Flow:** `delete-files` parses each `file_id`, deletes `uploads/<sha256>.<ext>` and `thumbnails/<sha256>.jpg` from S3, then runs one query, `file_id = <sha256>`, to get the file's `META` item and all of its `TAG#` items, and removes them with `BatchWriteItem`.
 
 #### Chatbot with natural-language queries
 
@@ -148,33 +150,67 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 
 ### 5.4 Tag-based notifications (Spec §4.4)
 
-1. **Subscribe:** `POST /subscriptions` with `{"tags": ["fox", "cane toad"]}`. A small `subscribe` Lambda reads the user's email from the JWT claims and calls SNS `Subscribe` with an email endpoint and a filter policy such as `{"species": ["fox", "cane toad"]}`. SNS sends a one-time confirmation email. (`subscribe` still needs to be added to the diagram's API Lambda group.)
-2. **Trigger:** every `INSERT` (new file) and `MODIFY` (tags edited) on `Files` reaches the `notify` Lambda through DynamoDB Streams (⑩). `notify` works out which species are new by comparing the old and new `tags` maps.
-3. **Deliver:** `notify` publishes one message per file with the message attribute `species` set to those new tags, plus a link to the file's page in the web app, `https://<site>/file/<sha256>`. A presigned URL is not used because it expires along with the Lambda's temporary credentials. SNS emails only the subscribers whose filter policy matches.
+1. **Subscribe:** `POST /subscriptions` with `{"tags": ["fox", "cane toad"]}`. A small `subscribe` Lambda reads the user's email from the JWT claims and calls SNS `Subscribe` with an email endpoint and a filter policy such as `{"species": ["fox", "cane toad"]}`. SNS sends a one-time confirmation email.
+2. **Trigger:** the `notify` Lambda reads the `Media` table's DynamoDB Stream (⑩). Its trigger has an **event filter** that passes only `INSERT` records whose `sk` begins with `TAG#`. Every record that reaches `notify` therefore means "file X gained tag Y", whether from automatic tagging or a manual edit, and no before/after comparison is needed. Changes to `META` items and count updates never invoke it.
+3. **Deliver:** `notify` groups the records in each batch by `file_id` and publishes one message per file, with the message attribute `species` set to the file's new tags, plus a link to the file's page in the web app, `https://<site>/file/<sha256>`. A presigned URL is not used because it expires along with the Lambda's temporary credentials. SNS emails only the subscribers whose filter policy matches.
 
-## 6. Data model (DynamoDB)
+## 6. Data model (DynamoDB single-table design)
 
-The data has no relationships that need joins: every query is "files with these tags". DynamoDB is serverless, needs no VPC (an RDS database would put the Lambdas in a VPC and require a NAT gateway to reach GCP), bills per request, and its Streams feed the notification flow directly.
+The data has no relationships that need SQL joins: every query is "files with these tags". DynamoDB is serverless, needs no VPC (an RDS database would put the Lambdas in a VPC and require a NAT gateway to reach GCP), bills per request, and its Streams feed the notification flow directly.
 
-**`Files` table**
+All data lives in **one table, `Media`**. A file's metadata and its tags share the same partition key (`file_id`), so each file forms one **item collection**, much like a folder. DynamoDB items are schemaless apart from the key: `META` items and `TAG` items carry different attributes.
 
-| Attribute | Notes |
+### 6.1 Example
+
+| `file_id` (PK) | `sk` (SK) | `file_url` | `thumb_url` | `file_type` | `attributes` | `owner` | `created_at` | `tag` | `tag_count` |
+|---|---|---|---|---|---|---|---|---|---|
+| `aaa…` | `META` | `uploads/aaa….jpg` | `thumbnails/aaa….jpg` | `image` | `[]` | `<sub>` | `2026-10-05T…` | | |
+| `aaa…` | `TAG#fox` | | | | | | | `fox` | `2` |
+| `aaa…` | `TAG#cat` | | | | | | | `cat` | `1` |
+| `bbb…` | `META` | `uploads/bbb….jpg` | `thumbnails/bbb….jpg` | `image` | `["orange"]` | `<sub>` | `2026-10-06T…` | | |
+| `bbb…` | `TAG#cat` | | | | | | | `cat` | `1` |
+
+Empty cells are attributes the item simply does not have. They are not stored as nulls.
+
+### 6.2 Keys and item types
+
+| Item type | `sk` value | Attributes |
+|---|---|---|
+| File metadata | `META` | `file_url`, `thumb_url` (absent for videos), `file_type` (`image` / `video`), `attributes` (colour / breed terms, e.g. `["orange"]`), `owner` (Cognito `sub`), `created_at` (ISO timestamp, used for "recent sightings") |
+| Tag | `TAG#<species>`, e.g. `TAG#cane toad` | `tag` (species name), `tag_count` (number) |
+
+- **Partition key `file_id`** is the file's SHA-256 (see "Keys and URLs" in §5). It is also the deduplication key: the `META` item is written with `attribute_not_exists(file_id)`.
+- **Sort key `sk`**: the `TAG#` prefix tells the item types apart and allows `begins_with(sk, "TAG#")` to fetch only a file's tags.
+- The count attribute is named `tag_count` because `count` is a DynamoDB reserved word.
+- Key strings are built in one shared helper module, packaged as a Lambda Layer, so no Lambda hand-writes `"TAG#" + name`.
+
+### 6.3 Global secondary index `tag-count-index`
+
+| Setting | Value |
 |---|---|
-| `file_id` (PK) | SHA-256 of the file content. It doubles as the deduplication key; writes use `attribute_not_exists(file_id)` |
-| `file_url`, `thumb_url` | S3 locations (`thumb_url` is empty for videos) |
-| `file_type` | `image` or `video` |
-| `tags` | Map of species to count, e.g. `{"fox": 2, "cane toad": 3}` |
-| `attributes` | Colour / breed terms from the second-stage classifier, e.g. `["orange"]`; used by the lost-pet search |
-| `owner`, `created_at` | Cognito `sub`; ISO timestamp, used for "recent sightings" |
+| Partition key | `tag` (String) |
+| Sort key | `tag_count` (Number) |
+| Projection | Keys only (the index then holds `tag`, `tag_count`, `file_id`, `sk`) |
 
-No secondary index is needed for "thumbnail URL to original": the thumbnail key contains the `file_id`, so the lookup is a plain `GetItem`.
+This is a **sparse index**: `META` items have no `tag` attribute, so DynamoDB leaves them out automatically and the index contains only tag items. A query like `tag = "fox" AND tag_count >= 2` reads only matching items, with no padding tricks and no filter pass.
 
-**`TagIndex` table** (one item per tag per file)
+### 6.4 Access patterns
 
-| Attribute | Notes |
+| Operation | DynamoDB calls |
 |---|---|
-| `tag` (PK) | e.g. `fox` |
-| `sk` (SK) | `<zero-padded count>#<file_id>`, e.g. `0002#ab12…`. Zero padding makes text order match number order, so `count >= 2` becomes the key condition `sk >= "0002#"` |
+| Save a newly tagged file | `TransactWriteItems`: `Put` `META` (conditional) + `Put` one `TAG#` item per species |
+| Get a file with all its tags | One `Query`: `file_id = :id`. This returns `META` and every `TAG#` item together and plays the role of the join |
+| Search by tags with minimum counts | One `Query` on `tag-count-index` per tag, intersect the `file_id`s, then `BatchGetItem` the `META` items |
+| Thumbnail URL to original | Parse `file_id` from the URL, then `GetItem` `{file_id, sk: "META"}` |
+| Add a tag | `Put` `{file_id, sk: "TAG#<tag>"}` (with a `ConditionCheck` on `META`) |
+| Remove a tag | `Delete` `{file_id, sk: "TAG#<tag>"}` |
+| Delete a file | `Query` `file_id = :id`, then `BatchWriteItem` deletes every returned item |
+| Notify on new tags | DynamoDB Stream (`NEW_IMAGE`) with an event filter: `INSERT` and `sk` begins with `TAG#` |
+
+### 6.5 Consistency
+
+- **Tags are stored exactly once**, as `TAG#` items. There is no second copy that could drift out of sync, and adding or removing a tag touches one item.
+- **The GSI is eventually consistent.** A new tag normally becomes searchable within a second. A search issued immediately after an upload may miss the new file, which is acceptable for this application. Reads by primary key, such as file details or "thumbnail to original", can use strongly consistent reads.
 
 ## 7. Model options
 
@@ -274,7 +310,8 @@ Switching models, adding a species or changing a threshold means uploading weigh
 | Presigned URL uploads straight to S3 | Gets around the 10 MB API Gateway / 6 MB Lambda payload limits, and the large file never passes through a Lambda |
 | Checksum-signed presigned PUT | Deduplication cannot be bypassed by sending one hash and uploading different content |
 | EventBridge between S3 and the processing Lambdas | One S3 event can trigger several Lambdas, and the rules filter by object key prefix |
-| DynamoDB instead of RDS | No joins needed; serverless, no VPC or NAT, Streams for notifications |
+| DynamoDB instead of RDS | No SQL joins needed; serverless, no VPC or NAT, Streams for notifications |
+| Single-table design (`Media`) with a sparse GSI | A file and its tags form one item collection, fetched with one query; each tag is stored once, so there is nothing to keep in sync; the sparse GSI on `tag` + `tag_count` answers "at least N of species X" with a key condition |
 | SNS for notifications | Native filter policies match the "notify me about species X" requirement with no custom matching code |
 
 ## 9. Diagram maintenance

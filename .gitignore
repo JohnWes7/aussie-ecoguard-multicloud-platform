@@ -1,0 +1,34 @@
+# Claude Code (local only)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+doc_local/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Build / packaging output
+build/
+dist/
+.aws-sam/
+*.zip
+packaged*.yaml
+
+# Node
+node_modules/
+
+# Secrets and credentials
+.env
+.env.*
+*-key.json
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

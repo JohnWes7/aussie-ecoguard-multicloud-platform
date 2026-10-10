@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Aussie EcoGuard - AWS resources (backbone)
+
+Resources:
+  # Private bucket for user media: originals in uploads/, thumbnails in thumbnails/.
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Bucket names are global, so the account ID keeps this one unique.
+      BucketName: !Sub "ecoguard-media-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # Publish every object event to the default EventBridge bus,
+      # where rules route uploads/ events to the processing Lambdas.
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      # The browser PUTs files directly with a presigned URL,
+      # sending the SHA-256 checksum header that S3 verifies.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT, GET]
+            AllowedOrigins: ["*"] # TODO: restrict to the website origin
+            AllowedHeaders: ["*"]
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
+
+Outputs:
+  MediaBucketName:
+    Value: !Ref MediaBucket

@@ -7,7 +7,7 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       # Bucket names are global, so the account ID keeps this one unique.
-      BucketName: !Sub "ecoguard-media-${AWS::AccountId}"
+      BucketName: !Sub "aussie-ecoguard-media-${AWS::AccountId}"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -28,6 +28,42 @@ Resources:
             ExposedHeaders: [ETag]
             MaxAge: 3000
 
+  # Single table for file metadata and tags.
+  #   META item:          {file_id, sk: "META", file_url, thumb_url, file_type, ...}
+  #   one item per tag:   {file_id, sk: "TAG#fox", tag: "fox", tag_count: 2}
+  MediaTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aussie-ecoguard-media
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: file_id # SHA-256 of the file
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: tag
+          AttributeType: S
+        - AttributeName: tag_count # "count" is a DynamoDB reserved word
+          AttributeType: N
+      KeySchema:
+        - AttributeName: file_id
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      # Sparse index: only TAG# items have a "tag" attribute, so META items
+      # stay out of it. Answers "tag = fox AND tag_count >= 2".
+      GlobalSecondaryIndexes:
+        - IndexName: tag-count-index
+          KeySchema:
+            - AttributeName: tag
+              KeyType: HASH
+            - AttributeName: tag_count
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+
 Outputs:
   MediaBucketName:
     Value: !Ref MediaBucket
+  MediaTableName:
+    Value: !Ref MediaTable

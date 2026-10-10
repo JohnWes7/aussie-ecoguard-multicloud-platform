@@ -3,7 +3,7 @@
 # Usage: ./infra/deploy.sh
 set -euo pipefail
 
-STACK_NAME="${STACK_NAME:-ecoguard}"
+STACK_NAME="${STACK_NAME:-aussie-ecoguard}"
 REGION="${AWS_REGION:-us-east-1}"
 cd "$(dirname "$0")"
 

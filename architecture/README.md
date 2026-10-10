@@ -24,7 +24,7 @@ AWS is the primary cloud. It hosts authentication, the REST API, storage, the da
 | GCP | Cloud Run | Containerised YOLO / MegaDetector inference API |
 | GCP | Cloud Storage | Model weights and a `config.json` that names the active model version |
 
-AWS runs in `us-east-1`, the region AWS Academy Learner Lab allows. GCP runs in `australia-southeast1`.
+AWS runs in `us-east-1`, the region AWS Academy Learner Lab allows. GCP runs in `us-east4` (Northern Virginia), next to `us-east-1`: the only caller of Cloud Run is the `tagging` Lambda, and Cloud Run downloads each file from the S3 bucket in `us-east-1`, so keeping both clouds in the same area avoids a trans-Pacific round trip on every call and every video frame read.
 
 ## 2. Authentication and authorisation
 

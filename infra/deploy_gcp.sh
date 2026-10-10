@@ -5,7 +5,8 @@
 set -euo pipefail
 
 PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
-REGION="${GCP_REGION:-australia-southeast1}"
+# us-east4 (N. Virginia) sits next to AWS us-east-1, so the Lambda call and the S3 download stay in one metro.
+REGION="${GCP_REGION:-us-east4}"
 SERVICE="${SERVICE:-aussie-ecoguard-inference}"
 cd "$(dirname "$0")/.."
 

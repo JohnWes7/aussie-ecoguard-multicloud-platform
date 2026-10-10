@@ -103,7 +103,7 @@ gcloud config set project <project-id>  # first time only
 ./infra/deploy_gcp.sh
 ```
 
-`gcloud run deploy --source inference` uploads the folder and Cloud Build builds the image from `inference/Dockerfile`, so Docker is not needed locally. The script prints the service URL at the end. The service is `aussie-ecoguard-inference` in `australia-southeast1`. It scales to zero when idle and is capped at 2 instances.
+`gcloud run deploy --source inference` uploads the folder and Cloud Build builds the image from `inference/Dockerfile`, so Docker is not needed locally. The script prints the service URL at the end. The service is `aussie-ecoguard-inference` in `us-east4`, next to AWS `us-east-1`. It scales to zero when idle and is capped at 2 instances.
 
 If the first deploy fails with `...-compute@developer.gserviceaccount.com does not have storage.objects.get access`, grant the Compute Engine default service account (which Cloud Build runs as) the Cloud Run Builder role, then deploy again:
 
@@ -239,7 +239,8 @@ aws s3 rm "s3://aussie-ecoguard-web-$ACCOUNT_ID" --recursive
 aws cloudformation delete-stack --stack-name aussie-ecoguard
 aws s3 rb "s3://aussie-ecoguard-artifacts-$ACCOUNT_ID" --force    # not part of the stack
 
-gcloud run services delete aussie-ecoguard-inference --region australia-southeast1
+gcloud run services delete aussie-ecoguard-inference --region us-east4
+gcloud artifacts repositories delete cloud-run-source-deploy --location us-east4    # images built by --source
 ```
 
 ## Troubleshooting

@@ -3,11 +3,19 @@
 Request body:  {"sha256": "<64 hex chars>", "filename": "fox.jpg"}
 200 response:  {"file_id", "key", "url", "headers", "expires_in"}
                The browser must PUT the file to `url` with exactly `headers`.
-409 response:  the file already exists or is being uploaded/processed.
+409 response:  the file is already uploaded (PROCESSING) or done (READY).
 
-Deduplication: before handing out a URL we write a placeholder META item
-(status PENDING) with a conditional put, so the same checksum can only be
-reserved once. The tagging Lambda later flips it to READY (or FAILED).
+Deduplication: before handing out a URL we write a META item with status
+PENDING. META status lifecycle:
+  PENDING     URL issued, file not in S3 yet. Any new request just gets a
+              fresh URL: the URL is bound to the checksum, so every upload
+              writes the same bytes to the same key.
+              TODO(cognito): only re-issue to the same owner, 409 for others.
+  PROCESSING  file is in S3, set by the tagging Lambda -> 409
+  READY       tagged and searchable -> 409
+  FAILED      tagging failed -> a new upload is allowed
+expires_at is a DynamoDB TTL attribute that removes abandoned PENDING items;
+tagging removes it when the file reaches PROCESSING.
 """
 
 import base64
@@ -24,7 +32,7 @@ from botocore.exceptions import ClientError
 TABLE_NAME = os.environ["TABLE_NAME"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 URL_EXPIRES = int(os.environ.get("URL_EXPIRES", "900"))  # seconds
-PENDING_TTL = int(os.environ.get("PENDING_TTL", "900"))  # seconds
+PENDING_TTL = int(os.environ.get("PENDING_TTL", "86400"))  # seconds until TTL cleanup
 
 # Allowed extensions -> (file_type, Content-Type). Content-Type is derived here,
 # not taken from the client, so it always matches the extension.
@@ -60,8 +68,8 @@ def handler(event, context):
     key = f"uploads/{sha256}.{ext}"
     now = int(time.time())
 
-    # Reserve the checksum. Succeeds only if no META item exists yet, the previous
-    # attempt FAILED, or a PENDING reservation expired (URL issued but never used).
+    # Reserve the checksum. Succeeds unless the file is already in S3
+    # (PROCESSING) or finished (READY).
     try:
         table.put_item(
             Item={
@@ -74,13 +82,9 @@ def handler(event, context):
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 # TODO(cognito): add "owner" from the JWT "sub" claim
             },
-            ConditionExpression=(
-                "attribute_not_exists(file_id)"
-                " OR #status = :failed"
-                " OR (#status = :pending AND expires_at < :now)"
-            ),
+            ConditionExpression="attribute_not_exists(file_id) OR #status IN (:pending, :failed)",
             ExpressionAttributeNames={"#status": "status"},  # reserved word
-            ExpressionAttributeValues={":failed": "FAILED", ":pending": "PENDING", ":now": now},
+            ExpressionAttributeValues={":pending": "PENDING", ":failed": "FAILED"},
             ReturnValuesOnConditionCheckFailure="ALL_OLD",
         )
     except ClientError as e:

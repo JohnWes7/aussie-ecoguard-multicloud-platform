@@ -2,6 +2,7 @@
 # Package Lambda code, deploy (create or update) the AWS stack and print its outputs.
 # Usage: ./infra/deploy.sh
 set -euo pipefail
+export AWS_PAGER="" # print output directly instead of opening a "-- More --" pager
 
 STACK_NAME="${STACK_NAME:-aussie-ecoguard}"
 REGION="${AWS_REGION:-us-east-1}"
@@ -11,7 +12,7 @@ ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ARTIFACT_BUCKET="${ARTIFACT_BUCKET:-aussie-ecoguard-artifacts-$ACCOUNT_ID}"
 cd "$(dirname "$0")"
 
-if ! aws s3api head-bucket --bucket "$ARTIFACT_BUCKET" 2>/dev/null; then
+if ! aws s3api head-bucket --bucket "$ARTIFACT_BUCKET" >/dev/null 2>&1; then
   echo "Creating artifact bucket $ARTIFACT_BUCKET"
   aws s3 mb "s3://$ARTIFACT_BUCKET" --region "$REGION"
 fi

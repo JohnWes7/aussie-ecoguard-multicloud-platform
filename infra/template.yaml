@@ -94,6 +94,11 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: KEYS_ONLY
+      # Abandoned PENDING items (URL issued, never uploaded) carry expires_at
+      # and are deleted automatically, usually within a few days of expiring.
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
 
   # Reserves a checksum in MediaTable and returns a presigned PUT URL.
   UploadUrlFunction:
@@ -114,7 +119,7 @@ Resources:
           TABLE_NAME: !Ref MediaTable
           BUCKET_NAME: !Ref MediaBucket
           URL_EXPIRES: "900"
-          PENDING_TTL: "900"
+          PENDING_TTL: "86400" # 24h before an unused reservation is cleaned up
 
 Outputs:
   MediaBucketName:

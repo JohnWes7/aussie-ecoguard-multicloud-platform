@@ -23,10 +23,43 @@ Resources:
       CorsConfiguration:
         CorsRules:
           - AllowedMethods: [PUT, GET]
-            AllowedOrigins: ["*"] # TODO: restrict to the website origin
+            # Only pages served from the website bucket (or a local dev server) may call it.
+            AllowedOrigins:
+              - !Sub "https://${WebsiteBucket.DomainName}"
+              - !Sub "http://${WebsiteBucket}.s3-website-${AWS::Region}.amazonaws.com"
+              - "http://localhost:8000"
             AllowedHeaders: ["*"]
             ExposedHeaders: [ETag]
             MaxAge: 3000
+
+  # Public bucket that hosts the web UI (HTML/JS only, no user data),
+  # set up the same way as the Week 9 lab.
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "aussie-ecoguard-web-${AWS::AccountId}"
+      # Allow a public bucket policy; ACLs stay blocked since the policy is all we need.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${WebsiteBucket.Arn}/*"
 
   # Single table for file metadata and tags.
   #   META item:          {file_id, sk: "META", file_url, thumb_url, file_type, ...}
@@ -67,3 +100,11 @@ Outputs:
     Value: !Ref MediaBucket
   MediaTableName:
     Value: !Ref MediaTable
+  WebsiteBucketName:
+    Value: !Ref WebsiteBucket
+  # HTTPS: use this one, browser SHA-256 (crypto.subtle) only works over HTTPS.
+  WebsiteHttpsURL:
+    Value: !Sub "https://${WebsiteBucket.DomainName}/index.html"
+  # HTTP-only static website endpoint, as in the Week 9 lab.
+  WebsiteEndpointURL:
+    Value: !GetAtt WebsiteBucket.WebsiteURL

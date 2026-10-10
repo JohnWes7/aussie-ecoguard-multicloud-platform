@@ -95,6 +95,27 @@ Resources:
           Projection:
             ProjectionType: KEYS_ONLY
 
+  # Reserves a checksum in MediaTable and returns a presigned PUT URL.
+  UploadUrlFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aussie-ecoguard-upload-url
+      Runtime: python3.12
+      Handler: app.handler
+      # Local folder; `aws cloudformation package` (deploy.sh) zips it,
+      # uploads it to S3 and rewrites this to the S3 location.
+      Code: ../lambdas/upload_url/
+      # Learner Lab cannot create IAM roles, so every function uses LabRole.
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MediaTable
+          BUCKET_NAME: !Ref MediaBucket
+          URL_EXPIRES: "900"
+          PENDING_TTL: "900"
+
 Outputs:
   MediaBucketName:
     Value: !Ref MediaBucket
@@ -108,3 +129,5 @@ Outputs:
   # HTTP-only static website endpoint, as in the Week 9 lab.
   WebsiteEndpointURL:
     Value: !GetAtt WebsiteBucket.WebsiteURL
+  UploadUrlFunctionName:
+    Value: !Ref UploadUrlFunction

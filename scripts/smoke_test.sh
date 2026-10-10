@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# End-to-end check of the deployed stack: CORS preflight, POST /upload-url,
+# PUT to the presigned URL, and bad requests. Cleans up its test file afterwards.
+# Needs AWS credentials. Usage: ./scripts/smoke_test.sh
+set -uo pipefail
+export AWS_PAGER=""
+
+STACK_NAME="${STACK_NAME:-aussie-ecoguard}"
+REGION="${AWS_REGION:-us-east-1}"
+
+output() {
+  aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
+    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+}
+API="$(output UploadUrlEndpoint)"
+BUCKET="$(output MediaBucketName)"
+TABLE="$(output MediaTableName)"
+ORIGIN="https://$(output WebsiteBucketName).s3.amazonaws.com"
+
+FAILURES=0
+check() { # check <name> <actual> <expected>
+  if [ "$2" = "$3" ]; then echo "PASS  $1"; else echo "FAIL  $1 (got '$2', expected '$3')"; FAILURES=$((FAILURES + 1)); fi
+}
+json() { python -c "import json,sys; print(json.load(sys.stdin)$1)"; }
+
+WORK="$(mktemp -d)"
+FILE="$WORK/smoke.jpg"
+head -c 2048 /dev/urandom > "$FILE" # random bytes, so the checksum is always new
+SHA="$(sha256sum "$FILE" | cut -d' ' -f1)"
+echo "API: $API"
+echo "Test file sha256: $SHA"
+
+cleanup() {
+  aws s3 rm "s3://$BUCKET/uploads/$SHA.jpg" --region "$REGION" >/dev/null 2>&1
+  aws dynamodb delete-item --table-name "$TABLE" --region "$REGION" \
+    --key "{\"file_id\":{\"S\":\"$SHA\"},\"sk\":{\"S\":\"META\"}}" >/dev/null 2>&1
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+# 1. CORS preflight
+PREFLIGHT="$(curl -s -i -X OPTIONS "$API" -H "Origin: $ORIGIN" \
+  -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type")"
+check "preflight status" "$(echo "$PREFLIGHT" | head -1 | cut -d' ' -f2)" "200"
+check "preflight allows POST" "$(echo "$PREFLIGHT" | grep -ci 'access-control-allow-methods:.*POST')" "1"
+
+# 2. POST /upload-url for a new file
+BODY="$WORK/body.json"
+STATUS="$(curl -s -o "$BODY" -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+  -d "{\"sha256\": \"$SHA\", \"filename\": \"smoke.jpg\"}")"
+check "POST new file" "$STATUS" "200"
+URL="$(json "['url']" < "$BODY")"
+CHECKSUM="$(json "['headers']['x-amz-checksum-sha256']" < "$BODY")"
+
+# 3. PUT the file to the presigned URL
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT -T "$FILE" "$URL" \
+  -H "Content-Type: image/jpeg" -H "x-amz-checksum-sha256: $CHECKSUM")"
+check "PUT to presigned URL" "$STATUS" "200"
+
+# 4. Different content with the same URL must be rejected (checksum is signed)
+head -c 2048 /dev/urandom > "$WORK/other.jpg"
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT -T "$WORK/other.jpg" "$URL" \
+  -H "Content-Type: image/jpeg" -H "x-amz-checksum-sha256: $CHECKSUM")"
+check "PUT different content rejected" "$STATUS" "400"
+
+# 5. Bad requests
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+  -d '{"sha256": "abc", "filename": "a.jpg"}')"
+check "POST bad sha256" "$STATUS" "400"
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+  -d "{\"sha256\": \"$SHA\", \"filename\": \"a.gif\"}")"
+check "POST unsupported type" "$STATUS" "400"
+
+echo
+if [ "$FAILURES" -eq 0 ]; then echo "All smoke tests passed"; else echo "$FAILURES smoke test(s) failed"; fi
+exit "$FAILURES"

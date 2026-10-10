@@ -121,6 +121,89 @@ Resources:
           URL_EXPIRES: "900"
           PENDING_TTL: "86400" # 24h before an unused reservation is cleaned up
 
+  # ---------- REST API: POST /upload-url -> UploadUrlFunction ----------
+
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: aussie-ecoguard-api
+      EndpointConfiguration:
+        Types: [REGIONAL]
+
+  UploadUrlResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: upload-url
+
+  # Lambda proxy integration: API Gateway passes the whole HTTP request to the
+  # function as `event` and returns the function's {statusCode, headers, body}.
+  UploadUrlPost:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref UploadUrlResource
+      HttpMethod: POST
+      AuthorizationType: NONE # TODO(cognito): COGNITO_USER_POOLS + AuthorizerId
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST # Lambda is always invoked with POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UploadUrlFunction.Arn}/invocations"
+
+  # CORS preflight. A JSON POST from the website (another origin) makes the
+  # browser send OPTIONS first; this answers it without invoking Lambda.
+  UploadUrlOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref UploadUrlResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Headers: true
+
+  # A deployment is a snapshot of the API; the stage "api" serves it at
+  # https://<api-id>.execute-api.<region>.amazonaws.com/api/...
+  # CloudFormation only creates this snapshot once, so deploy.sh takes a new
+  # one after every stack update.
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: [UploadUrlPost, UploadUrlOptions]
+    Properties:
+      RestApiId: !Ref Api
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref Api
+      DeploymentId: !Ref ApiDeployment
+      StageName: api
+
+  # Resource-based policy on the function: lets this API (and only this
+  # route) invoke it. LabRole is not involved here.
+  UploadUrlInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UploadUrlFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/POST/upload-url"
+
 Outputs:
   MediaBucketName:
     Value: !Ref MediaBucket
@@ -136,3 +219,7 @@ Outputs:
     Value: !GetAtt WebsiteBucket.WebsiteURL
   UploadUrlFunctionName:
     Value: !Ref UploadUrlFunction
+  ApiId:
+    Value: !Ref Api
+  UploadUrlEndpoint:
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com/${ApiStage}/upload-url"

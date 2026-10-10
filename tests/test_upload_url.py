@@ -1,0 +1,130 @@
+"""Unit tests for lambdas/upload_url (POST /upload-url)."""
+
+import base64
+import hashlib
+import json
+import time
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+
+from conftest import load_lambda
+
+SHA = hashlib.sha256(b"fox").hexdigest()
+
+
+@pytest.fixture
+def app(aws):
+    return load_lambda("upload_url")
+
+
+def call(app, body):
+    """Invoke the handler the way API Gateway's proxy integration does."""
+    response = app.handler({"body": json.dumps(body)}, None)
+    return response["statusCode"], json.loads(response["body"])
+
+
+def get_meta(table):
+    return table.get_item(Key={"file_id": SHA, "sk": "META"})["Item"]
+
+
+def set_status(table, status):
+    table.update_item(
+        Key={"file_id": SHA, "sk": "META"},
+        UpdateExpression="SET #s = :s",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={":s": status},
+    )
+
+
+def test_new_file_returns_presigned_url(app, table):
+    status, body = call(app, {"sha256": SHA, "filename": "fox.jpg"})
+
+    assert status == 200
+    assert body["key"] == f"uploads/{SHA}.jpg"
+    assert body["headers"]["Content-Type"] == "image/jpeg"
+    # Both headers must be part of the signature, or the browser could change them.
+    signed = parse_qs(urlparse(body["url"]).query)["X-Amz-SignedHeaders"][0]
+    assert signed == "content-type;host;x-amz-checksum-sha256"
+
+
+def test_new_file_writes_pending_meta_with_24h_ttl(app, table):
+    call(app, {"sha256": SHA, "filename": "fox.jpg"})
+
+    item = get_meta(table)
+    assert item["status"] == "PENDING"
+    assert item["file_type"] == "image"
+    assert item["file_url"] == f"uploads/{SHA}.jpg"
+    assert 86000 < int(item["expires_at"]) - time.time() <= 86400
+
+
+def test_checksum_header_is_base64_of_sha256(app, table):
+    _, body = call(app, {"sha256": SHA, "filename": "fox.jpg"})
+
+    assert base64.b64decode(body["headers"]["x-amz-checksum-sha256"]).hex() == SHA
+
+
+@pytest.mark.parametrize("filename, key_ext, content_type", [
+    ("Fox.JPEG", "jpg", "image/jpeg"),
+    ("fox.jpeg", "jpg", "image/jpeg"),
+    ("fox.PNG", "png", "image/png"),
+    ("clip.mp4", "mp4", "video/mp4"),
+    ("clip.MOV", "mov", "video/quicktime"),
+])
+def test_extension_is_normalised(app, table, filename, key_ext, content_type):
+    _, body = call(app, {"sha256": SHA, "filename": filename})
+
+    assert body["key"] == f"uploads/{SHA}.{key_ext}"
+    assert body["headers"]["Content-Type"] == content_type
+
+
+def test_pending_file_gets_a_new_url(app, table):
+    _, first = call(app, {"sha256": SHA, "filename": "fox.jpg"})
+    status, second = call(app, {"sha256": SHA, "filename": "Fox.JPEG"})
+
+    assert status == 200
+    assert second["key"] == first["key"]
+
+
+@pytest.mark.parametrize("current", ["PROCESSING", "READY"])
+def test_uploaded_file_is_rejected(app, table, current):
+    call(app, {"sha256": SHA, "filename": "fox.jpg"})
+    set_status(table, current)
+
+    status, body = call(app, {"sha256": SHA, "filename": "fox.jpg"})
+
+    assert status == 409
+    assert body["status"] == current
+    assert body["key"] == f"uploads/{SHA}.jpg"
+
+
+def test_failed_file_can_be_uploaded_again(app, table):
+    call(app, {"sha256": SHA, "filename": "fox.jpg"})
+    set_status(table, "FAILED")
+
+    status, _ = call(app, {"sha256": SHA, "filename": "fox.jpg"})
+
+    assert status == 200
+    assert get_meta(table)["status"] == "PENDING"
+
+
+@pytest.mark.parametrize("body", [
+    {"sha256": "abc", "filename": "fox.jpg"},       # too short
+    {"sha256": "z" * 64, "filename": "fox.jpg"},    # not hex
+    {"filename": "fox.jpg"},                        # missing sha256
+    {"sha256": SHA, "filename": "fox.gif"},         # unsupported type
+    {"sha256": SHA, "filename": "fox"},             # no extension
+])
+def test_invalid_request_returns_400(app, table, body):
+    status, _ = call(app, body)
+    assert status == 400
+
+
+def test_body_that_is_not_json_returns_400(app, table):
+    response = app.handler({"body": "{"}, None)
+    assert response["statusCode"] == 400
+
+
+def test_responses_allow_cors(app, table):
+    response = app.handler({"body": json.dumps({"sha256": SHA, "filename": "fox.jpg"})}, None)
+    assert response["headers"]["Access-Control-Allow-Origin"] == "*"

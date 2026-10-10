@@ -30,6 +30,20 @@ aws cloudformation deploy \
   --region "$REGION" \
   --no-fail-on-empty-changeset
 
+# CloudFormation does not redeploy the API when its routes change, so publish
+# the current API configuration to the "api" stage on every run.
+API_ID="$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiId'].OutputValue" \
+  --output text)"
+aws apigateway create-deployment \
+  --rest-api-id "$API_ID" \
+  --stage-name api \
+  --description "deploy.sh" \
+  --region "$REGION" >/dev/null
+echo "Published API $API_ID to stage api"
+
 aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \

@@ -31,7 +31,7 @@ echo "API: $API"
 echo "Test file sha256: $SHA"
 
 cleanup() {
-  aws s3 rm "s3://$BUCKET/uploads/$SHA.jpg" --region "$REGION" >/dev/null 2>&1
+  aws s3 rm "s3://$BUCKET/uploads/$SHA" --region "$REGION" >/dev/null 2>&1
   aws dynamodb delete-item --table-name "$TABLE" --region "$REGION" \
     --key "{\"file_id\":{\"S\":\"$SHA\"},\"sk\":{\"S\":\"META\"}}" >/dev/null 2>&1
   rm -rf "$WORK"

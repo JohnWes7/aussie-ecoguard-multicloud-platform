@@ -65,7 +65,10 @@ def handler(event, context):
         return response(400, {"error": f"unsupported file type, allowed: {sorted(FILE_TYPES)}"})
     file_type, content_type = FILE_TYPES[ext]
 
-    key = f"uploads/{sha256}.{ext}"
+    # The key depends only on the content, not the extension, so the same bytes
+    # uploaded as fox.jpg and fox.png land on one object. The type lives in
+    # the object's Content-Type and in META's file_type.
+    key = f"uploads/{sha256}"
     now = int(time.time())
 
     # Reserve the checksum. Succeeds unless the file is already in S3

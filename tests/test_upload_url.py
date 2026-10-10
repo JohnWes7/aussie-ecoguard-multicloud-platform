@@ -41,7 +41,7 @@ def test_new_file_returns_presigned_url(app, table):
     status, body = call(app, {"sha256": SHA, "filename": "fox.jpg"})
 
     assert status == 200
-    assert body["key"] == f"uploads/{SHA}.jpg"
+    assert body["key"] == f"uploads/{SHA}"
     assert body["headers"]["Content-Type"] == "image/jpeg"
     # Both headers must be part of the signature, or the browser could change them.
     signed = parse_qs(urlparse(body["url"]).query)["X-Amz-SignedHeaders"][0]
@@ -54,7 +54,7 @@ def test_new_file_writes_pending_meta_with_24h_ttl(app, table):
     item = get_meta(table)
     assert item["status"] == "PENDING"
     assert item["file_type"] == "image"
-    assert item["file_url"] == f"uploads/{SHA}.jpg"
+    assert item["file_url"] == f"uploads/{SHA}"
     assert 86000 < int(item["expires_at"]) - time.time() <= 86400
 
 
@@ -64,23 +64,25 @@ def test_checksum_header_is_base64_of_sha256(app, table):
     assert base64.b64decode(body["headers"]["x-amz-checksum-sha256"]).hex() == SHA
 
 
-@pytest.mark.parametrize("filename, key_ext, content_type", [
-    ("Fox.JPEG", "jpg", "image/jpeg"),
-    ("fox.jpeg", "jpg", "image/jpeg"),
-    ("fox.PNG", "png", "image/png"),
-    ("clip.mp4", "mp4", "video/mp4"),
-    ("clip.MOV", "mov", "video/quicktime"),
+@pytest.mark.parametrize("filename, file_type, content_type", [
+    ("Fox.JPEG", "image", "image/jpeg"),
+    ("fox.jpeg", "image", "image/jpeg"),
+    ("fox.PNG", "image", "image/png"),
+    ("clip.mp4", "video", "video/mp4"),
+    ("clip.MOV", "video", "video/quicktime"),
 ])
-def test_extension_is_normalised(app, table, filename, key_ext, content_type):
+def test_extension_sets_type_but_not_key(app, table, filename, file_type, content_type):
     _, body = call(app, {"sha256": SHA, "filename": filename})
 
-    assert body["key"] == f"uploads/{SHA}.{key_ext}"
+    assert body["key"] == f"uploads/{SHA}"
     assert body["headers"]["Content-Type"] == content_type
+    assert get_meta(table)["file_type"] == file_type
 
 
-def test_pending_file_gets_a_new_url(app, table):
+def test_pending_file_gets_a_new_url_for_the_same_key(app, table):
+    # A different extension must not create a second object for the same bytes.
     _, first = call(app, {"sha256": SHA, "filename": "fox.jpg"})
-    status, second = call(app, {"sha256": SHA, "filename": "Fox.JPEG"})
+    status, second = call(app, {"sha256": SHA, "filename": "fox.png"})
 
     assert status == 200
     assert second["key"] == first["key"]
@@ -95,7 +97,7 @@ def test_uploaded_file_is_rejected(app, table, current):
 
     assert status == 409
     assert body["status"] == current
-    assert body["key"] == f"uploads/{SHA}.jpg"
+    assert body["key"] == f"uploads/{SHA}"
 
 
 def test_failed_file_can_be_uploaded_again(app, table):

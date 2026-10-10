@@ -12,6 +12,17 @@ ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ARTIFACT_BUCKET="${ARTIFACT_BUCKET:-aussie-ecoguard-artifacts-$ACCOUNT_ID}"
 cd "$(dirname "$0")"
 
+# The tagging Lambda calls the Cloud Run service; deploy_gcp.sh must have run first.
+if [ -z "${INFERENCE_URL:-}" ]; then
+  INFERENCE_URL="$(gcloud run services describe "${SERVICE:-aussie-ecoguard-inference}" \
+    --region "${GCP_REGION:-us-east4}" --format 'value(status.url)' 2>/dev/null || true)"
+fi
+if [ -z "$INFERENCE_URL" ]; then
+  echo "Cannot find the Cloud Run URL. Run ./infra/deploy_gcp.sh first, or set INFERENCE_URL=https://..." >&2
+  exit 1
+fi
+echo "Inference service: $INFERENCE_URL"
+
 if ! aws s3api head-bucket --bucket "$ARTIFACT_BUCKET" >/dev/null 2>&1; then
   echo "Creating artifact bucket $ARTIFACT_BUCKET"
   aws s3 mb "s3://$ARTIFACT_BUCKET" --region "$REGION"
@@ -28,6 +39,7 @@ aws cloudformation deploy \
   --stack-name "$STACK_NAME" \
   --template-file packaged.yaml \
   --region "$REGION" \
+  --parameter-overrides "InferenceUrl=$INFERENCE_URL" \
   --no-fail-on-empty-changeset
 
 # CloudFormation does not redeploy the API when its routes change, so publish

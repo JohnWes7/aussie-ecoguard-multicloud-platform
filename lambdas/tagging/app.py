@@ -14,10 +14,11 @@ Steps for one file:
 
 Retries are left to SQS. On a temporary error (network, timeout, 429, 5xx)
 the function raises, and SQS delivers the message again after the visibility
-timeout. On the last attempt it writes FAILED instead. A 4xx answer will not
-change on retry, so it is FAILED straight away. If the function crashes or
-times out on the last attempt, the message moves to the dead-letter queue and
-META stays PROCESSING until the message is redriven.
+timeout. From attempt MAX_ATTEMPTS on it writes FAILED instead. A 4xx answer
+will not change on retry, so it is FAILED straight away. The queue allows more
+deliveries than MAX_ATTEMPTS, so a crash or timeout on the last attempt still
+gets another delivery. Only if every delivery crashes does the message move to
+the dead-letter queue, leaving META in PROCESSING until it is redriven.
 """
 
 import json
@@ -34,7 +35,7 @@ from botocore.exceptions import ClientError
 TABLE_NAME = os.environ["TABLE_NAME"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 INFERENCE_URL = os.environ["INFERENCE_URL"]  # Cloud Run service URL, no trailing path
-MAX_ATTEMPTS = int(os.environ.get("MAX_ATTEMPTS", "3"))  # keep equal to the queue's maxReceiveCount
+MAX_ATTEMPTS = int(os.environ.get("MAX_ATTEMPTS", "3"))  # below the queue's maxReceiveCount (5)
 INFER_TIMEOUT = int(os.environ.get("INFER_TIMEOUT", "60"))  # seconds, Cloud Run's own limit
 GET_URL_EXPIRES = 300  # seconds Cloud Run has to start downloading the file
 

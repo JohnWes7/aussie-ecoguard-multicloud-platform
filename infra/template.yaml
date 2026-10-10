@@ -107,7 +107,7 @@ Resources:
       FunctionName: aussie-ecoguard-upload-url
       Runtime: python3.12
       Handler: app.handler
-      # Local folder; `aws cloudformation package` (deploy.sh) zips it,
+      # Local folder; `aws cloudformation package` (deploy_aws.sh) zips it,
       # uploads it to S3 and rewrites this to the S3 location.
       Code: ../lambdas/upload_url/
       # Learner Lab cannot create IAM roles, so every function uses LabRole.
@@ -179,7 +179,7 @@ Resources:
 
   # A deployment is a snapshot of the API; the stage "api" serves it at
   # https://<api-id>.execute-api.<region>.amazonaws.com/api/...
-  # CloudFormation only creates this snapshot once, so deploy.sh takes a new
+  # CloudFormation only creates this snapshot once, so deploy_aws.sh takes a new
   # one after every stack update.
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment

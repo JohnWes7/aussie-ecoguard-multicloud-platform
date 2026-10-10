@@ -13,7 +13,7 @@ The backbone is being built first: website → upload to S3 → inference → Dy
 | Media bucket, `Media` DynamoDB table, website bucket | Deployed |
 | `POST /upload-url` (Lambda + API Gateway, deduplication by SHA-256) | Deployed, no auth yet |
 | `tagging` Lambda + EventBridge rule | Not started |
-| Cloud Run inference service (stub that returns fixed tags) | Not started |
+| Cloud Run inference service (stub: downloads the file, returns fake tags) | Deployed, no auth yet |
 | Web page that uploads files | Not started |
 
 ## Repository layout
@@ -22,12 +22,14 @@ The backbone is being built first: website → upload to S3 → inference → Dy
 architecture/        Architecture doc and diagram (edit the .drawio, then export the .png)
 infra/
   template.yaml      CloudFormation template: every AWS resource lives here
-  deploy.sh          Packages the Lambda code and deploys the stack
+  deploy_aws.sh      Packages the Lambda code and deploys the AWS stack
+  deploy_gcp.sh      Builds and deploys the inference service to Cloud Run
 lambdas/
   upload_url/app.py  POST /upload-url
+inference/           Cloud Run service (Flask + Dockerfile), currently a stub
 tests/               Unit tests (pytest + moto, no AWS account needed)
 scripts/
-  smoke_test.sh      End-to-end checks against the deployed stack
+  smoke_test.sh      End-to-end checks against the deployed AWS stack
 ```
 
 ## Prerequisites
@@ -36,6 +38,7 @@ scripts/
 - Python 3.10 or newer
 - A bash shell. On Windows use **Git Bash**, not PowerShell (see [Troubleshooting](#troubleshooting))
 - An AWS Academy Learner Lab
+- For the inference service: the gcloud CLI, logged in to a GCP project with billing enabled
 
 Each Learner Lab is a separate AWS account, so each of us deploys our own copy of the stack. Resource names that must be globally unique include the account ID, so the same template works in every account.
 
@@ -55,10 +58,12 @@ Stopping the lab does not delete the stack. Only the credentials change.
 
 ## Deploy
 
+### AWS stack
+
 From the repository root, in Git Bash:
 
 ```bash
-./infra/deploy.sh
+./infra/deploy_aws.sh
 ```
 
 The same command creates the stack the first time and updates it afterwards. It:
@@ -78,7 +83,7 @@ pip install cfn-lint
 cfn-lint infra/template.yaml   # the W3002 warning about `package` is expected
 ```
 
-### What the stack creates
+What the stack creates:
 
 | Resource | Name |
 |---|---|
@@ -89,6 +94,26 @@ cfn-lint infra/template.yaml   # the W3002 warning about `package` is expected
 | REST API | `aussie-ecoguard-api`, stage `api` |
 
 Your account also contains a stack with a long random name. Learner Lab created it, so leave it alone.
+
+### Inference service (GCP Cloud Run)
+
+```bash
+gcloud auth login                       # first time only
+gcloud config set project <project-id>  # first time only
+./infra/deploy_gcp.sh
+```
+
+`gcloud run deploy --source inference` uploads the folder and Cloud Build builds the image from `inference/Dockerfile`, so Docker is not needed locally. The script prints the service URL at the end. The service is `aussie-ecoguard-inference` in `australia-southeast1`. It scales to zero when idle and is capped at 2 instances.
+
+If the first deploy fails with `...-compute@developer.gserviceaccount.com does not have storage.objects.get access`, grant the Compute Engine default service account (which Cloud Build runs as) the Cloud Run Builder role, then deploy again:
+
+```bash
+PROJECT=$(gcloud config get-value project)
+NUMBER=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:$NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/run.builder"
+```
 
 ## API
 
@@ -123,6 +148,28 @@ The file's `META` item in DynamoDB moves through these states:
 
 Unused `PENDING` items are deleted by DynamoDB TTL about 24 hours later.
 
+### Inference service (Cloud Run)
+
+Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credentials).
+
+`POST /infer`
+
+```json
+{"url": "<presigned S3 GET URL for uploads/...>", "file_type": "image"}
+```
+
+| Status | Meaning | Body |
+|---|---|---|
+| 200 | Done | `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "stub-v1"}` |
+| 400 | `url` is not a presigned URL for an `aussie-ecoguard-media-*` bucket's `uploads/`, or bad `file_type` | `{error}` |
+| 502 | The file could not be downloaded (e.g. the URL or the credentials that signed it expired) | `{"error": "could not download file (S3 returned 403)"}` |
+
+Cloud Run downloads the file itself from the presigned URL instead of receiving it base64-encoded: Cloud Run requests are limited to 32 MiB and base64 adds 33%, so videos would not fit.
+
+The stub really downloads the file but runs no model. Its tags are derived from the file's SHA-256 (1–2 species, counts 1–3, plus a colour for cats and dogs), so the same file always gets the same tags. The request and response format will stay the same when the real model replaces it.
+
+`GET /health` returns `{"status": "ok", "model": "stub-v1"}`.
+
 ## Testing
 
 ### Unit tests
@@ -150,7 +197,19 @@ This checks the deployed stack end to end and needs valid credentials. Run it af
 
 It reads the endpoint from the stack outputs and uses a random file. It checks the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, and that bad requests return 400. Afterwards it deletes its test object and DynamoDB item. It exits with 0 only if every check passes.
 
-### Manual test
+### Manual test of the inference service
+
+```bash
+SVC=<service URL printed by deploy_gcp.sh>
+curl "$SVC/health"
+URL=$(aws s3 presign "s3://aussie-ecoguard-media-<account-id>/uploads/<sha256>.jpg" --expires-in 300)
+curl -X POST "$SVC/infer" -H "Content-Type: application/json" \
+  -d "{\"url\": \"$URL\", \"file_type\": \"image\"}"
+```
+
+`aws s3 presign` works offline, so with expired Learner Lab credentials it still prints a URL, but S3 rejects it (`502 ... S3 returned 400`). Refresh the credentials first.
+
+### Manual test of upload-url
 
 ```bash
 API=<UploadUrlEndpoint from the deploy output>
@@ -179,14 +238,18 @@ aws s3 rm "s3://aussie-ecoguard-media-$ACCOUNT_ID" --recursive    # a bucket mus
 aws s3 rm "s3://aussie-ecoguard-web-$ACCOUNT_ID" --recursive
 aws cloudformation delete-stack --stack-name aussie-ecoguard
 aws s3 rb "s3://aussie-ecoguard-artifacts-$ACCOUNT_ID" --force    # not part of the stack
+
+gcloud run services delete aussie-ecoguard-inference --region australia-southeast1
 ```
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
-| Running `./infra/deploy.sh` in PowerShell opens a "choose an app" dialog | PowerShell cannot run `.sh` files. Close the dialog without choosing "Always". Switch the VS Code terminal to **Git Bash**, or run `& "C:\Program Files\Git\bin\bash.exe" ./infra/deploy.sh` |
+| Running `./infra/deploy_aws.sh` in PowerShell opens a "choose an app" dialog | PowerShell cannot run `.sh` files. Close the dialog without choosing "Always". Switch the VS Code terminal to **Git Bash**, or run `& "C:\Program Files\Git\bin\bash.exe" ./infra/deploy_aws.sh` |
 | `ExpiredToken` / `InvalidClientTokenId` | Learner Lab credentials expired. Copy fresh ones into `~/.aws/credentials` |
+| `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
+| First `deploy_gcp.sh` fails with `storage.objects.get` denied | Grant the Compute Engine default service account `roles/run.builder` (see [Inference service](#inference-service-gcp-cloud-run)) |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET`, a typo, or a missing `/api` stage |
 | `PUT` returns 403 `SignatureDoesNotMatch` | The URL was not copied completely, or the headers differ from the ones returned |
 | `PUT` returns 400 `BadDigest` | The file content does not match the SHA-256 that was reserved |

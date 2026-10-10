@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Package Lambda code, deploy (create or update) the AWS stack and print its outputs.
-# Usage: ./infra/deploy.sh
+# Usage: ./infra/deploy_aws.sh
 set -euo pipefail
 export AWS_PAGER="" # print output directly instead of opening a "-- More --" pager
 
@@ -40,7 +40,7 @@ API_ID="$(aws cloudformation describe-stacks \
 aws apigateway create-deployment \
   --rest-api-id "$API_ID" \
   --stage-name api \
-  --description "deploy.sh" \
+  --description "deploy_aws.sh" \
   --region "$REGION" >/dev/null
 echo "Published API $API_ID to stage api"
 

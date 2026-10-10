@@ -1,3 +1,6 @@
 boto3
 moto[s3,dynamodb]>=5.0
 pytest
+# inference service (inference/requirements.txt)
+flask>=3,<4
+requests>=2.32

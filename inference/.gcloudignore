@@ -1,0 +1,4 @@
+# Files not uploaded to Cloud Build by `gcloud run deploy --source`
+.gcloudignore
+__pycache__/
+*.pyc

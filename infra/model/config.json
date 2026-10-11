@@ -9,20 +9,50 @@
   "species_threshold": 0.3,
   "colour_threshold": 0.4,
 
-  "species": ["fox", "rabbit", "feral pig", "cane toad", "cat", "dog"],
+  "species": [
+    "fox", "rabbit", "feral pig", "cane toad", "cat", "dog",
+    "deer", "goat", "horse", "camel", "cattle",
+    "kangaroo", "possum", "wombat", "koala", "bandicoot", "echidna", "emu",
+    "bird", "reptile", "frog", "rodent"
+  ],
+  "unknown_tag": "other animal",
 
   "species_rules": [
-    ["canidae;vulpes;vulpes", "fox"],
-    ["leporidae;", "rabbit"],
-    ["suidae;", "feral pig"],
-    ["bufonidae;", "cane toad"],
-    ["felidae;", "cat"],
-    ["canidae;canis;", "dog"]
+    ["mammalia;carnivora;canidae;vulpes;", "fox"],
+    ["mammalia;carnivora;canidae;canis;", "dog"],
+    ["mammalia;carnivora;felidae;", "cat"],
+    ["mammalia;lagomorpha;leporidae;", "rabbit"],
+    ["mammalia;artiodactyla;suidae;", "feral pig"],
+    ["amphibia;anura;bufonidae;", "cane toad"],
+
+    ["mammalia;artiodactyla;cervidae;", "deer"],
+    ["mammalia;artiodactyla;bovidae;capra;", "goat"],
+    ["mammalia;artiodactyla;bovidae;bos;", "cattle"],
+    ["mammalia;perissodactyla;equidae;", "horse"],
+    ["mammalia;artiodactyla;camelidae;", "camel"],
+
+    ["mammalia;diprotodontia;macropodidae;", "kangaroo"],
+    ["mammalia;diprotodontia;phalangeridae;", "possum"],
+    ["mammalia;diprotodontia;pseudocheiridae;", "possum"],
+    ["mammalia;diprotodontia;vombatidae;", "wombat"],
+    ["mammalia;diprotodontia;phascolarctidae;", "koala"],
+    ["mammalia;peramelemorphia;peramelidae;", "bandicoot"],
+    ["mammalia;monotremata;tachyglossidae;", "echidna"],
+    ["aves;struthioniformes;casuariidae;dromaius;", "emu"],
+
+    ["aves;", "bird"],
+    ["reptilia;", "reptile"],
+    ["amphibia;anura;", "frog"],
+    ["mammalia;rodentia;", "rodent"],
+
+    [";;;;", "not an animal"],
+    ["mammalia;primates;hominidae;homo;", "not an animal"]
   ],
 
-  "clip_distractors": ["kangaroo", "wallaby", "possum", "wombat", "koala", "bird",
-                       "deer", "cow", "sheep", "horse", "lizard"],
-  "clip_prompt_names": {"fox": "red fox", "feral pig": "wild pig", "cat": "domestic cat", "dog": "domestic dog"},
+  "clip_prompt_names": {
+    "fox": "red fox", "feral pig": "wild pig", "cat": "domestic cat", "dog": "domestic dog",
+    "kangaroo": "kangaroo or wallaby", "goat": "feral goat", "reptile": "lizard or snake"
+  },
   "clip_templates": ["a camera trap photo of a {}.", "a photo of a {}.",
                      "a blurry photo of a {}.", "a night infrared photo of a {}."],
 

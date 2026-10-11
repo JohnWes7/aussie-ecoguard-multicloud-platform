@@ -2,13 +2,14 @@
 
 The pipeline was chosen in experiments/model-selection (see its README):
   1. MegaDetector finds the animals (boxes with conf >= detection_threshold).
-  2. The SpeciesNet classifier names every box. Its labels are mapped to our
-     species with species_rules (Australia-specific, see below).
+  2. The SpeciesNet classifier names every box. Its labels (2000+ taxa) are
+     mapped to our tag list with species_rules (see to_species).
   3. Image-level smoothing: boxes it is unsure about follow the image's
      dominant species ("700 cows and one deer is really 701 cows").
   4. If no box reaches species_threshold, CLIP zero-shot names the boxes
      instead (model chaining, Spec 4.1).
-  5. CLIP gives the colour of the species in colour_for (cats and dogs).
+  5. Animals that are still unnamed are counted as unknown_tag ("other animal").
+  6. CLIP gives the colour of the species in colour_for (cats and dogs).
 
 Model files, thresholds and labels all come from <MODEL_DIR>/config.json,
 so a new model or species list needs no code change (Spec 4.1).
@@ -30,23 +31,24 @@ def load_config(model_dir):
 
 
 def taxonomy_key(label):
-    """SpeciesNet label -> "family;genus;species".
+    """SpeciesNet label -> "class;order;family;genus;species".
 
     Labels look like "<uuid>;mammalia;carnivora;canidae;vulpes;vulpes;red fox".
     Higher-level labels leave the lower fields empty, e.g. the family-level
-    "<uuid>;mammalia;lagomorpha;leporidae;;;rabbit and hare family".
+    "<uuid>;mammalia;lagomorpha;leporidae;;;rabbit and hare family", and
+    "blank" (no animal) has every field empty: ";;;;".
     """
     parts = label.lower().split(";")
-    return ";".join(parts[3:6]) if len(parts) >= 7 else ""
+    return ";".join(parts[1:6]) if len(parts) >= 7 else ""
 
 
 def to_species(label, rules):
-    """Map a SpeciesNet label to one of our species, or None.
+    """Map a SpeciesNet label to one of our tags, or None.
 
-    rules is a list of [prefix, species], first match wins. A family prefix
-    such as "felidae;" also matches every genus and species in that family.
-    That is safe because, in Australia, each of these families contains only
-    the one invasive species we track.
+    rules is a list of [prefix, tag], first match wins, so specific rules
+    come before general ones (cane toad before frog, emu before bird).
+    A family prefix such as "mammalia;carnivora;felidae;" matches every genus
+    and species in that family; in Australia the felids are all cats.
     """
     key = taxonomy_key(label)
     for prefix, species in rules:
@@ -107,10 +109,21 @@ def needs_fallback(named, threshold):
     return bool(named) and max(score for _, score in named) < threshold
 
 
-def count_species(labels, species):
-    """{"fox": 2} from the final box labels, keeping only our species
-    (OTHER and CLIP distractors such as "kangaroo" are dropped)."""
-    return dict(Counter(label for label in labels if label in species))
+def count_species(labels, species, unknown_tag):
+    """{"fox": 2, "other animal": 1} from the final box labels.
+
+    Boxes nobody could name (OTHER) are animals MegaDetector found but no
+    model recognised, so they count as unknown_tag. Labels that are not in
+    the species list, such as "not an animal" (blank, vehicle, human), are
+    dropped.
+    """
+    counts = Counter()
+    for label in labels:
+        if label == OTHER:
+            counts[unknown_tag] += 1
+        elif label in species:
+            counts[label] += 1
+    return dict(counts)
 
 
 def file_colours(box_colours, threshold):

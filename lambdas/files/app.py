@@ -1,7 +1,8 @@
 """Read-only file API for the website.
 
-GET /files           -> {"files": [file, ...]}, newest first. PENDING items are
-                        left out: their file may never have been uploaded.
+GET /files           -> {"files": [file, ...]}, newest first. A PENDING item is
+                        only listed while its upload URL is still valid; after
+                        that nobody can upload the file, so it was abandoned.
 GET /files/{sha256}  -> one file, any status (the website polls it until the
                         file is READY or FAILED). 404 if unknown, 400 if not a SHA-256.
 
@@ -15,6 +16,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -23,6 +25,7 @@ from botocore.config import Config
 TABLE_NAME = os.environ["TABLE_NAME"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 PREVIEW_URL_EXPIRES = int(os.environ.get("PREVIEW_URL_EXPIRES", "3600"))  # seconds
+URL_EXPIRES = int(os.environ.get("URL_EXPIRES", "900"))  # upload-url's PUT URL lifetime
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -63,9 +66,22 @@ def list_files():
             break
         scan["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
+    now = datetime.now(timezone.utc)
     files = [to_file(items) for items in items_by_file.values()]
-    files = [f for f in files if f is not None and f["status"] != "PENDING"]
+    files = [f for f in files if f is not None and is_listed(f, now)]
     return sorted(files, key=lambda f: f["created_at"], reverse=True)
+
+
+def is_listed(file, now):
+    """Hide PENDING files whose upload URL has expired.
+
+    upload-url rewrites created_at every time it issues a URL, so a PENDING
+    file older than URL_EXPIRES can no longer be uploaded.
+    """
+    if file["status"] != "PENDING":
+        return True
+    age = now - datetime.fromisoformat(file["created_at"])
+    return age.total_seconds() <= URL_EXPIRES
 
 
 def to_file(items):

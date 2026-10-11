@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -57,16 +58,28 @@ def test_list_has_tags_and_newest_first(app, table):
     assert files[0]["filename"] == f"{CAT[:4]}.jpg"
 
 
-def test_list_leaves_out_pending_but_keeps_processing_and_failed(app, table):
-    put_file(table, FOX, status="PENDING")
+def test_list_keeps_every_status_after_pending(app, table):
+    put_file(table, FOX, status="PROCESSING")
     put_file(table, CAT, status="FAILED", error="inference returned 400: boom")
-    other = hashlib.sha256(b"rabbit").hexdigest()
-    put_file(table, other, status="PROCESSING")
 
     files = {f["file_id"]: f for f in list_files(app)}
 
-    assert set(files) == {CAT, other}
+    assert set(files) == {FOX, CAT}
     assert files[CAT]["error"] == "inference returned 400: boom"
+
+
+def ago(seconds):
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+def test_list_shows_pending_only_while_its_upload_url_is_valid(app, table):
+    put_file(table, FOX, status="PENDING", created_at=ago(60))       # may still be uploading
+    put_file(table, CAT, status="PENDING", created_at=ago(16 * 60))  # URL expired: abandoned
+
+    files = list_files(app)
+
+    assert [f["file_id"] for f in files] == [FOX]
+    assert "preview_url" not in files[0]
 
 
 def test_tags_without_meta_are_ignored(app, table):

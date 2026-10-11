@@ -295,6 +295,7 @@ Resources:
           TABLE_NAME: !Ref MediaTable
           BUCKET_NAME: !Ref MediaBucket
           PREVIEW_URL_EXPIRES: "3600"
+          URL_EXPIRES: "900" # keep equal to UploadUrlFunction's URL_EXPIRES
 
   FilesResource:
     Type: AWS::ApiGateway::Resource

@@ -2,7 +2,7 @@
   "model_label": "md5a+speciesnet-4.0.3a+clip-b32",
 
   "speciesnet_dir": "speciesnet-v4.0.3a",
-  "clip_arch": "ViT-B-32",
+  "clip_arch": "ViT-B-32-quickgelu",
   "clip_weights": "clip-vit-b-32/open_clip_model.safetensors",
 
   "detection_threshold": 0.2,

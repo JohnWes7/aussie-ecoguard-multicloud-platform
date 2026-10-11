@@ -1,31 +1,68 @@
-"""Unit tests for inference/main.py (Cloud Run stub). No network or GCP needed."""
+"""Unit tests for inference/main.py (the Cloud Run web service).
 
-import hashlib
+The real models are replaced by FakePipeline, so no torch, weights, network or
+GCP are needed. The decision rules inside the models are tested separately in
+test_inference_model.py.
+"""
+
 import importlib.util
+import io
+import sys
 from pathlib import Path
 
 import pytest
 import requests
 from fastapi.testclient import TestClient
+from PIL import Image
 
-MAIN = Path(__file__).resolve().parent.parent / "inference" / "main.py"
+INFERENCE_DIR = Path(__file__).resolve().parent.parent / "inference"
 GOOD_URL = (
-    "https://aussie-ecoguard-media-357614057244.s3.amazonaws.com/uploads/abc.jpg"
+    "https://aussie-ecoguard-media-357614057244.s3.amazonaws.com/uploads/abc"
     "?X-Amz-Signature=x"
 )
 
 
+class FakePipeline:
+    """Stands in for model.Pipeline and records the images it was given."""
+
+    config = {"model_label": "fake-model"}
+
+    def __init__(self, tags=None, attributes=None):
+        self.tags = tags if tags is not None else {"fox": 2}
+        self.attributes = attributes or []
+        self.images = []
+
+    def detect(self, image):
+        self.images.append(image)
+        return self.tags, self.attributes
+
+
 @pytest.fixture
 def main():
-    spec = importlib.util.spec_from_file_location("inference_main", MAIN)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # main.py does `from model import Pipeline`, so inference/ must be importable.
+    sys.path.insert(0, str(INFERENCE_DIR))
+    try:
+        spec = importlib.util.spec_from_file_location("inference_main", INFERENCE_DIR / "main.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(INFERENCE_DIR))
+    module.pipeline = FakePipeline()
     return module
 
 
 @pytest.fixture
 def client(main):
+    # Not used as a context manager, so the startup hook (which would load the
+    # real models) does not run; main.pipeline is already the fake.
     return TestClient(main.app)
+
+
+def image_bytes(size=(40, 20), fmt="PNG", exif=None):
+    buffer = io.BytesIO()
+    kwargs = {"exif": exif} if exif is not None else {}
+    Image.new("RGB", size, "orange").save(buffer, format=fmt, **kwargs)
+    return buffer.getvalue()
 
 
 class FakeResponse:
@@ -57,7 +94,9 @@ def s3_file(main, monkeypatch):
     """Make downloads return the given bytes; records the URLs that were fetched."""
     fetched = []
 
-    def use(content=b"fox image bytes", status=200):
+    def use(content=None, status=200):
+        content = image_bytes() if content is None else content
+
         def fake_get(url, **kwargs):
             fetched.append(url)
             return FakeResponse(content, status, url)
@@ -67,49 +106,74 @@ def s3_file(main, monkeypatch):
     return use
 
 
-def test_health(client):
+def test_health_reports_the_model(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "model": "stub-v1"}
+    assert response.json() == {"status": "ok", "model": "fake-model"}
 
 
-def test_infer_returns_tags_from_the_downloaded_file(client, main, s3_file):
-    fetched = s3_file(b"fox image bytes")
+def test_infer_runs_the_models_on_the_downloaded_image(client, main, s3_file):
+    fetched = s3_file(image_bytes(size=(40, 20)))
+    main.pipeline = FakePipeline(tags={"cat": 1, "other animal": 1}, attributes=["orange"])
 
     response = client.post("/infer", json={"url": GOOD_URL, "file_type": "image"})
 
     assert response.status_code == 200
+    assert response.json() == {"tags": {"cat": 1, "other animal": 1}, "attributes": ["orange"],
+                               "model": "fake-model"}
     assert fetched == [GOOD_URL]
-    body = response.json()
-    assert body["model"] == "stub-v1"
-    assert 1 <= len(body["tags"]) <= 2
-    assert all(species in main.SPECIES for species in body["tags"])
-    assert all(1 <= count <= 3 for count in body["tags"].values())
-    expected = main.fake_detections(hashlib.sha256(b"fox image bytes").digest())
-    assert (body["tags"], body["attributes"]) == expected
+    [image] = main.pipeline.images
+    assert image.mode == "RGB" and image.size == (40, 20)
 
 
-def test_same_file_gets_same_tags_and_files_differ(main):
-    digests = [hashlib.sha256(str(i).encode()).digest() for i in range(50)]
-    results = [main.fake_detections(d) for d in digests]
+def test_image_with_no_animals_returns_empty_tags(client, main, s3_file):
+    s3_file()
+    main.pipeline = FakePipeline(tags={})
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "image"})
+    assert response.status_code == 200
+    assert response.json()["tags"] == {}
 
-    assert main.fake_detections(digests[0]) == results[0]
-    assert len({str(tags) for tags, _ in results}) > 5
+
+def test_jpeg_and_other_formats_are_decoded(client, s3_file):
+    s3_file(image_bytes(fmt="JPEG"))
+    assert client.post("/infer", json={"url": GOOD_URL, "file_type": "image"}).status_code == 200
 
 
-def test_colour_only_for_pets(main):
-    for i in range(200):
-        tags, attributes = main.fake_detections(hashlib.sha256(str(i).encode()).digest())
-        if "cat" in tags or "dog" in tags:
-            assert len(attributes) == 1 and attributes[0] in main.COLOURS
-        else:
-            assert attributes == []
+def test_phone_photo_is_turned_upright_using_exif(main):
+    exif = Image.Exif()
+    exif[0x0112] = 6  # Orientation: rotate 90 degrees to display
+    image = main.open_image(image_bytes(size=(40, 20), fmt="JPEG", exif=exif))
+    assert image.size == (20, 40)
+
+
+def test_file_that_is_not_an_image_returns_422(client, main, s3_file):
+    s3_file(b"definitely not an image")
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "image"})
+    assert response.status_code == 422
+    assert response.json() == {"error": "file is not a valid image"}
+    assert main.pipeline.images == []
+
+
+def test_video_returns_415_without_downloading(client, s3_file):
+    fetched = s3_file()
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "video"})
+    assert response.status_code == 415  # 4xx: tagging marks the file FAILED instead of retrying
+    assert response.json() == {"error": "video files are not supported yet"}
+    assert fetched == []
+
+
+def test_file_over_the_size_limit_returns_413(client, main, s3_file, monkeypatch):
+    monkeypatch.setattr(main, "MAX_IMAGE_BYTES", 1000)
+    s3_file(b"x" * 1001)
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "image"})
+    assert response.status_code == 413
+    assert main.pipeline.images == []
 
 
 def test_regional_s3_url_is_allowed(client, s3_file):
     s3_file()
     url = GOOD_URL.replace(".s3.amazonaws.com", ".s3.us-east-1.amazonaws.com")
-    response = client.post("/infer", json={"url": url, "file_type": "video"})
+    response = client.post("/infer", json={"url": url, "file_type": "image"})
     assert response.status_code == 200
 
 

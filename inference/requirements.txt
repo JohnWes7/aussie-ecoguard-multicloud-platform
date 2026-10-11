@@ -1,3 +1,12 @@
+# CPU-only PyTorch: Cloud Run has no GPU, and the CUDA build is ~2 GB larger.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1
+torchvision==0.29.1
+# Models (versions used in experiments/model-selection)
+speciesnet==5.0.5        # MegaDetector + SpeciesNet classifier
+open_clip_torch==3.3.0   # CLIP
+# Web service
 fastapi>=0.115,<1
 uvicorn>=0.30
 requests>=2.32
+pillow>=11

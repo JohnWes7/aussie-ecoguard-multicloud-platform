@@ -5,3 +5,4 @@ pytest
 fastapi>=0.115,<1
 httpx  # used by FastAPI's TestClient
 requests>=2.32
+pillow>=11  # main.py decodes images (the models themselves are not needed: tests use a fake)

@@ -40,3 +40,7 @@ web/config.js
 experiments/model-selection/data/images/
 .venv-speciesnet/
 experiments/model-selection/weights/
+
+# Inference service: model files from infra/fetch_models.py, local venv with torch
+/models/
+.venv-inference/

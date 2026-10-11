@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of the deployed stack: tagging queue trigger, CORS preflight,
-# POST /upload-url, PUT to the presigned URL, and bad requests.
+# POST /upload-url, PUT to the presigned URL, tagging (EventBridge -> SQS ->
+# Lambda -> Cloud Run -> DynamoDB), duplicate rejection and bad requests.
 # Cleans up its test file afterwards.
 # Needs AWS credentials. Usage: ./scripts/smoke_test.sh
 set -uo pipefail
@@ -23,6 +24,12 @@ check() { # check <name> <actual> <expected>
   if [ "$2" = "$3" ]; then echo "PASS  $1"; else echo "FAIL  $1 (got '$2', expected '$3')"; FAILURES=$((FAILURES + 1)); fi
 }
 json() { python -c "import json,sys; print(json.load(sys.stdin)$1)"; }
+# meta <path>: one attribute of the test file's META item, e.g. status.S ("None" if missing)
+meta() {
+  aws dynamodb get-item --table-name "$TABLE" --region "$REGION" \
+    --key "{\"file_id\":{\"S\":\"$SHA\"},\"sk\":{\"S\":\"META\"}}" \
+    --query "Item.$1" --output text
+}
 
 WORK="$(mktemp -d)"
 FILE="$WORK/smoke.jpg"
@@ -33,8 +40,17 @@ echo "Test file sha256: $SHA"
 
 cleanup() {
   aws s3 rm "s3://$BUCKET/uploads/$SHA" --region "$REGION" >/dev/null 2>&1
-  aws dynamodb delete-item --table-name "$TABLE" --region "$REGION" \
-    --key "{\"file_id\":{\"S\":\"$SHA\"},\"sk\":{\"S\":\"META\"}}" >/dev/null 2>&1
+  # Tagging writes TAG# items next to META, so delete every item of the file.
+  # A leftover TAG# item would turn up in tag searches as a file that does not exist.
+  aws dynamodb query --table-name "$TABLE" --region "$REGION" \
+    --key-condition-expression "file_id = :id" \
+    --expression-attribute-values "{\":id\":{\"S\":\"$SHA\"}}" \
+    --query "Items[].sk.S" --output text 2>/dev/null | tr '\t' '\n' | tr -d '\r' |
+    while IFS= read -r SK; do
+      [ -n "$SK" ] && [ "$SK" != "None" ] || continue
+      aws dynamodb delete-item --table-name "$TABLE" --region "$REGION" \
+        --key "{\"file_id\":{\"S\":\"$SHA\"},\"sk\":{\"S\":\"$SK\"}}" >/dev/null 2>&1
+    done
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -71,7 +87,30 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT -T "$WORK/other.jpg" "$U
   -H "Content-Type: image/jpeg" -H "x-amz-checksum-sha256: $CHECKSUM")"
 check "PUT different content rejected" "$STATUS" "400"
 
-# 5. Bad requests
+# 5. Tagging: S3 event -> EventBridge -> SQS -> tagging Lambda -> Cloud Run -> DynamoDB.
+#    Usually done in about 10 s. The stub only hashes the file, so random bytes work.
+#    TODO(real model): random bytes cannot be decoded, so use a real image then.
+STATE="$(meta status.S)"
+for _ in $(seq 1 30); do
+  case "$STATE" in READY | FAILED) break ;; esac
+  sleep 2
+  STATE="$(meta status.S)"
+done
+check "tagging finished (META status)" "$STATE" "READY"
+[ "$STATE" != "FAILED" ] || echo "      error: $(meta error.S)"
+check "expires_at removed (no TTL on stored files)" "$(meta expires_at.N)" "None"
+TAG_COUNT="$(aws dynamodb query --table-name "$TABLE" --region "$REGION" \
+  --key-condition-expression "file_id = :id AND begins_with(sk, :tag)" \
+  --expression-attribute-values "{\":id\":{\"S\":\"$SHA\"},\":tag\":{\"S\":\"TAG#\"}}" \
+  --select COUNT --query Count --output text)"
+check "TAG# items written" "$([ "${TAG_COUNT:-0}" -ge 1 ] && echo yes || echo no)" "yes"
+
+# 6. The same file again is a duplicate now
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+  -d "{\"sha256\": \"$SHA\", \"filename\": \"smoke.jpg\"}")"
+check "POST same file after READY returns 409" "$STATUS" "409"
+
+# 7. Bad requests
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d '{"sha256": "abc", "filename": "a.jpg"}')"
 check "POST bad sha256" "$STATUS" "400"

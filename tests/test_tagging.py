@@ -252,3 +252,20 @@ def test_error_message_does_not_leak_the_presigned_url(app, table, cloud_run):
     error = get_meta(table)["error"]
     assert error == "inference returned 400: boom"
     assert "X-Amz" not in error
+
+
+def test_fastapi_422_detail_is_not_stored(app, table, monkeypatch):
+    put_meta(table)
+
+    # FastAPI's validation error echoes the request, presigned URL included.
+    def reject(request, timeout):
+        url = json.loads(request.data)["url"]
+        body = io.BytesIO(json.dumps({"detail": [{"msg": "bad", "input": url}]}).encode())
+        raise urllib.error.HTTPError(request.full_url, 422, "error", {}, body)
+    monkeypatch.setattr(urllib.request, "urlopen", reject)
+
+    app.handler(sqs_event(), None)
+
+    meta = get_meta(table)
+    assert meta["status"] == "FAILED"
+    assert meta["error"] == "inference returned 422: "

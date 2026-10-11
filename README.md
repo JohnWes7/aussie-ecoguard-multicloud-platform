@@ -12,7 +12,7 @@ The backbone is being built first: website → upload to S3 → inference → Dy
 |---|---|
 | Media bucket, `Media` DynamoDB table, website bucket | Deployed |
 | `POST /upload-url` (Lambda + API Gateway, deduplication by SHA-256) | Deployed, no auth yet |
-| `tagging` Lambda + EventBridge rule | Not started |
+| `tagging` (EventBridge rule → SQS queue → Lambda → Cloud Run → DynamoDB) | Deployed |
 | Cloud Run inference service (stub: downloads the file, returns fake tags) | Deployed, no auth yet |
 | Web page that uploads files | Not started |
 
@@ -26,10 +26,12 @@ infra/
   deploy_gcp.sh      Builds and deploys the inference service to Cloud Run
 lambdas/
   upload_url/app.py  POST /upload-url
+  tagging/app.py     Runs inference on each new upload and saves the tags
 inference/           Cloud Run service (FastAPI + Dockerfile), currently a stub
 tests/               Unit tests (pytest + moto, no AWS account needed)
 scripts/
   smoke_test.sh      End-to-end checks against the deployed AWS stack
+  upload.sh          Uploads one file through the real flow and prints its tags
 ```
 
 ## Prerequisites
@@ -58,6 +60,8 @@ Stopping the lab does not delete the stack. Only the credentials change. After s
 
 ## Deploy
 
+Deploy the [inference service](#inference-service-gcp-cloud-run) first: the AWS stack needs its URL.
+
 ### AWS stack
 
 From the repository root, in Git Bash:
@@ -68,12 +72,13 @@ From the repository root, in Git Bash:
 
 The same command creates the stack the first time and updates it afterwards. It:
 
-1. Creates the bucket `aussie-ecoguard-artifacts-<account-id>` for Lambda code, if it does not exist yet. This bucket is outside the stack because the code has to be uploaded before the stack is deployed.
-2. Runs `aws cloudformation package`, which zips each Lambda folder, uploads it, and writes `infra/packaged.yaml` (generated, git-ignored, do not edit) with the S3 location.
-3. Runs `aws cloudformation deploy` on the stack `aussie-ecoguard`. CloudFormation only changes resources whose definition changed.
-4. Publishes the REST API to the `api` stage. CloudFormation does not redeploy an API when its routes change, so the script does it every time.
-5. Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)).
-6. Prints the stack outputs, including `UploadUrlEndpoint`.
+1. Looks up the Cloud Run URL with `gcloud run services describe` and passes it to the stack as the `InferenceUrl` parameter. Without gcloud, set it yourself: `INFERENCE_URL=https://... ./infra/deploy_aws.sh`.
+2. Creates the bucket `aussie-ecoguard-artifacts-<account-id>` for Lambda code, if it does not exist yet. This bucket is outside the stack because the code has to be uploaded before the stack is deployed.
+3. Runs `aws cloudformation package`, which zips each Lambda folder, uploads it, and writes `infra/packaged.yaml` (generated, git-ignored, do not edit) with the S3 location.
+4. Runs `aws cloudformation deploy` on the stack `aussie-ecoguard`. CloudFormation only changes resources whose definition changed.
+5. Publishes the REST API to the `api` stage. CloudFormation does not redeploy an API when its routes change, so the script does it every time.
+6. Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)).
+7. Prints the stack outputs, including `UploadUrlEndpoint`.
 
 Because the template points at local Lambda folders, uploading `template.yaml` in the CloudFormation console does **not** work. Always deploy with the script. The console is still useful for watching progress: CloudFormation → `aussie-ecoguard` → **Events** shows what changed and why a deployment failed.
 
@@ -91,8 +96,10 @@ What the stack creates:
 | Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
 | Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `WebsiteHttpsURL` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
 | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
-| Lambda | `aussie-ecoguard-upload-url` (role: `LabRole`) |
+| Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging` (role: `LabRole`) |
 | REST API | `aussie-ecoguard-api`, stage `api` |
+| EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
+| SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
 
 Your account also contains a stack with a long random name. Learner Lab created it, so leave it alone.
 
@@ -138,6 +145,8 @@ Allowed extensions: `jpg` / `jpeg`, `png`, `mp4`, `mov`.
 
 After a 200, `PUT` the file to `url` with exactly the returned `headers` (`Content-Type` and `x-amz-checksum-sha256`). Both are part of the signature, and S3 rejects the upload if the content does not match the SHA-256. The URL is valid for 15 minutes.
 
+The object key is `uploads/<sha256>`, with no extension: it depends only on the content, so the same bytes uploaded as `fox.jpg` and `fox.png` end up as one object. The extension only decides the file type, which is stored as the object's `Content-Type` and as `file_type` (`image` / `video`) in the `META` item.
+
 The file's `META` item in DynamoDB moves through these states:
 
 | Status | Meaning | Another `POST /upload-url` for the same file |
@@ -148,6 +157,30 @@ The file's `META` item in DynamoDB moves through these states:
 | `FAILED` | Tagging failed | 200, upload again |
 
 Unused `PENDING` items are deleted by DynamoDB TTL about 24 hours later.
+
+### Tagging (after the upload)
+
+There is no API call for this step: the upload itself triggers it.
+
+```
+S3 Object Created (uploads/) → EventBridge rule → SQS queue → tagging Lambda → Cloud Run POST /infer → DynamoDB
+```
+
+1. The `tagging` Lambda moves `META` from `PENDING` to `PROCESSING` and removes `expires_at`, so TTL never deletes a stored file. Objects without a `META` item (not uploaded through `/upload-url`) and files that are already `READY` or `FAILED` are skipped.
+2. It sends Cloud Run a presigned GET URL for the object and the `file_type`.
+3. On success, one transaction sets `META` to `READY` (with `attributes`, `model`, and `thumb_url` for images) and writes one `TAG#<species>` item per species, e.g. `{tag: "fox", tag_count: 2}`. This usually takes about 10 seconds after the upload.
+
+The queue limits tagging to 2 files at a time, the same as Cloud Run's instance limit, so a burst of uploads waits in the queue instead of overloading Cloud Run.
+
+| Cloud Run result | What happens |
+|---|---|
+| 200 | `READY` |
+| Network error, timeout, 429 or 5xx | The Lambda fails and SQS delivers the message again after 7.5 minutes (the queue's visibility timeout). On the 3rd attempt the file becomes `FAILED` |
+| Other 4xx, or a result in the wrong format | `FAILED` at once; trying again would give the same answer |
+
+`FAILED` items have an `error` attribute with the reason, and the file can be uploaded again. If the Lambda itself crashes or times out on every delivery (5 in total), the message moves to the dead-letter queue and the file stays `PROCESSING` (see [Troubleshooting](#troubleshooting)).
+
+Lambda logs: CloudWatch → Log groups → `/aws/lambda/aussie-ecoguard-tagging`. Each file logs one line such as `<sha256>: READY {'fox': 2}`, or the reason it was skipped or failed.
 
 ### Inference service (Cloud Run)
 
@@ -198,14 +231,22 @@ This checks the deployed stack end to end and needs valid credentials. Run it af
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the stack outputs and uses a random file. It checks that the tagging queue trigger is enabled, the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, and that bad requests return 400. Afterwards it deletes its test object and DynamoDB item. It exits with 0 only if every check passes.
+It reads the endpoint from the stack outputs and uses a random file. It checks that the tagging queue trigger is enabled, the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 60 seconds), that the same file then gets 409, and that bad requests return 400. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+
+### Upload a real file
+
+```bash
+./scripts/upload.sh path/to/fox.jpg
+```
+
+Uploads the file the same way the website will, waits for tagging and prints the stored items. A file that is already in the system gets 409, and the script prints its items instead. The file stays in the system.
 
 ### Manual test of the inference service
 
 ```bash
 SVC=<service URL printed by deploy_gcp.sh>
 curl "$SVC/health"
-URL=$(aws s3 presign "s3://aussie-ecoguard-media-<account-id>/uploads/<sha256>.jpg" --expires-in 300)
+URL=$(aws s3 presign "s3://aussie-ecoguard-media-<account-id>/uploads/<sha256>" --expires-in 300)
 curl -X POST "$SVC/infer" -H "Content-Type: application/json" \
   -d "{\"url\": \"$URL\", \"file_type\": \"image\"}"
 ```
@@ -213,6 +254,8 @@ curl -X POST "$SVC/infer" -H "Content-Type: application/json" \
 `aws s3 presign` works offline, so with expired Learner Lab credentials it still prints a URL, but S3 rejects it (`502 ... S3 returned 400`). Refresh the credentials first.
 
 ### Manual test of upload-url
+
+`scripts/upload.sh` does all of this; the steps by hand are:
 
 ```bash
 API=<UploadUrlEndpoint from the deploy output>
@@ -253,6 +296,9 @@ gcloud artifacts repositories delete cloud-run-source-deploy --location us-east4
 | Running `./infra/deploy_aws.sh` in PowerShell opens a "choose an app" dialog | PowerShell cannot run `.sh` files. Close the dialog without choosing "Always". Switch the VS Code terminal to **Git Bash**, or run `& "C:\Program Files\Git\bin\bash.exe" ./infra/deploy_aws.sh` |
 | `ExpiredToken` / `InvalidClientTokenId` | Learner Lab credentials expired. Copy fresh ones into `~/.aws/credentials` |
 | Uploads stay `PENDING`; the tagging queue has messages but nothing processes them; smoke test fails `tagging queue trigger enabled` | When a Learner Lab session ends, `LabRole` loses its SQS permissions for a while. Lambda then disables the queue trigger by itself (CloudTrail event `LambdaESMDisabled`; the mapping shows `USER_INITIATED`, which is misleading) and does not turn it back on. Run `./infra/deploy_aws.sh` to enable it. Queued messages are kept for 4 days and are processed once it is enabled |
+| A file is `FAILED` | Its `META` item has an `error` attribute with the reason, also in the `tagging` logs. Fix the cause and upload the file again (`POST /upload-url` allows it) |
+| A file stays `PROCESSING` | The `tagging` Lambda crashed or timed out on every delivery and the message is in the dead-letter queue. Check the logs, fix the cause, then SQS console → `aussie-ecoguard-tagging-dlq` → **Start DLQ redrive** to send it back; tagging continues from `PROCESSING` |
+| `deploy_aws.sh` stops with `Cannot find the Cloud Run URL` | Deploy the inference service first, log in with gcloud, or set `INFERENCE_URL=https://...` |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | First `deploy_gcp.sh` fails with `storage.objects.get` denied | Grant the Compute Engine default service account `roles/run.builder` (see [Inference service](#inference-service-gcp-cloud-run)) |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET`, a typo, or a missing `/api` stage |

@@ -149,7 +149,11 @@ def call_inference(key, file_type):
 
 
 def error_text(http_error):
-    """The "error" field of Cloud Run's JSON error body, shortened for storage."""
+    """The "error" field of Cloud Run's JSON error body, shortened for storage.
+
+    FastAPI's 422 body ({"detail": [...]}) is deliberately ignored: it echoes
+    the request back, including the presigned URL.
+    """
     try:
         return str(json.load(http_error).get("error", ""))[:200]
     except (ValueError, AttributeError):

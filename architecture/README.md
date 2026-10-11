@@ -15,7 +15,8 @@ AWS is the primary cloud. It hosts authentication, the REST API, storage, the da
 | AWS | Amazon API Gateway (REST) | Public API. A Cognito authorizer rejects requests that do not carry a valid JWT |
 | AWS | AWS Lambda (API functions) | `upload-url`, `search`, `edit-tags`, `delete-files`, `chat`, `subscribe` |
 | AWS | Amazon S3 (media bucket) | Original files in `uploads/`, thumbnails in `thumbnails/` |
-| AWS | Amazon EventBridge | Routes each S3 "Object Created" event to the thumbnail and tagging Lambdas (see §4) |
+| AWS | Amazon EventBridge | Routes each S3 "Object Created" event to the thumbnail Lambda and to the tagging queue (see §4) |
+| AWS | Amazon SQS | Queues uploads for the tagging Lambda, so at most two files are tagged at once; a dead-letter queue keeps messages that keep failing (see §4) |
 | AWS | AWS Lambda (event functions) | `thumbnail`, `tagging`, `notify` |
 | AWS | Amazon DynamoDB | Single `Media` table holding file metadata and tags (§6); DynamoDB Streams drive notifications |
 | AWS | Amazon Lex V2 | Chatbot that turns natural-language queries into intents and slots |
@@ -40,28 +41,55 @@ The file never passes through API Gateway or the API Lambdas. API Gateway limits
 
 ```
 Browser                API Gateway + upload-url λ        S3 media bucket        EventBridge        thumbnail λ / tagging λ
-   │  ③ POST /upload-url {sha256, filename, type} + JWT      │                       │                     │
+   │  ③ POST /upload-url {sha256, filename} + JWT            │                       │                     │
    │ ─────────────────────────────►│                          │                       │                     │
-   │                               │ look up sha256 in DynamoDB                       │                     │
-   │   409 duplicate  ◄────────────┤ (already stored)         │                       │                     │
-   │   presigned PUT URL ◄─────────┤ (new file)               │                       │                     │
+   │                               │ conditional write: META = PENDING                │                     │
+   │   409 duplicate  ◄────────────┤ (PROCESSING / READY)     │                       │                     │
+   │   presigned PUT URL ◄─────────┤ (new, PENDING or FAILED) │                       │                     │
    │  ④ PUT file (direct to S3) ─────────────────────────────►│                       │                     │
    │                                                          │ Object Created ──────►│ rule 1 ──► thumbnail ⑤
-   │                                                          │                       │ rule 2 ──► tagging   ⑥
+   │                                                          │                       │ rule 2 ──► SQS ──► tagging ⑥
 ```
 
-1. **Checksum in the browser.** The browser computes the file's **SHA-256** and calls `POST /upload-url` with the checksum, file name and content type (③).
-2. **Deduplication.** The `upload-url` Lambda checks whether the `Media` table already has a `META` item for that checksum. If it is already there, the API returns `409 Duplicate` with the existing file's URL and nothing is uploaded.
-3. **Presigned URL.** For a new file, the Lambda returns a short-lived presigned **PUT** URL for `uploads/<sha256>.<ext>`. The URL is signed with the checksum (`ChecksumSHA256`), so S3 rejects any upload whose content does not match the checksum. As a backstop, `tagging` re-hashes the object and deletes it if the hash does not match its key.
+1. **Checksum in the browser.** The browser computes the file's **SHA-256** and calls `POST /upload-url` with the checksum and the file name (③). The Lambda derives the file type and `Content-Type` from the extension (`jpg`/`jpeg`, `png`, `mp4`, `mov`) instead of trusting a type sent by the client.
+2. **Deduplication.** The `upload-url` Lambda reserves the checksum with one conditional write of a `META` item with status `PENDING`. If the file is already `PROCESSING` or `READY`, the write fails and the API returns `409 Duplicate` with the existing status and key, and nothing is uploaded. The write is atomic, so two simultaneous requests for the same new file cannot both reserve it. §3.1 describes the statuses.
+3. **Presigned URL.** For a new file, the Lambda returns a short-lived presigned **PUT** URL for `uploads/<sha256>`. The `ChecksumSHA256` and the `Content-Type` are part of the signature, so the browser cannot change either of them, and S3 rejects any upload whose content does not match the checksum. Because S3 itself checks the checksum, the key always matches the content and nothing has to re-hash the object later.
 4. **Direct upload (④).** The browser PUTs the file straight to S3.
-5. **Event routing.** S3 sends an "Object Created" event to EventBridge. Two EventBridge rules, both filtered to the `uploads/` prefix, invoke the two processing Lambdas in parallel:
-   - **⑤ `thumbnail`** downloads the image, resizes it while keeping the aspect ratio, compresses it with OpenCV, and writes the result to `thumbnails/`. Because the rules only match `uploads/`, writing a thumbnail does not trigger the pipeline again.
-   - **⑥ `tagging`** creates a presigned **GET** URL for the object and sends it to Cloud Run (⑦). The call is authenticated with a GCP ID token minted from the service-account key held in Secrets Manager.
+5. **Event routing.** S3 sends an "Object Created" event to EventBridge. Two EventBridge rules, both filtered to the `uploads/` prefix, start the two processing Lambdas in parallel:
+   - **⑤ `thumbnail`** reads the object with `GetObject` and first checks the `Content-Type` in the response. Keys have no extension, so the rule cannot filter by suffix; for anything that is not `image/*` the Lambda returns before reading the body. For images it resizes the picture while keeping the aspect ratio, compresses it with OpenCV, and writes the result to `thumbnails/`. Because the rules only match `uploads/`, writing a thumbnail does not trigger the pipeline again.
+   - **⑥ `tagging`** is fed through an SQS queue (§4). It first moves the `META` item from `PENDING` to `PROCESSING`, then creates a presigned **GET** URL for the object and sends it, with the `file_type`, to Cloud Run (⑦). The call is authenticated with a GCP ID token minted from the service-account key held in Secrets Manager.
 6. **⑦ ⑧ Inference on GCP.** Cloud Run reads `config.json` from Cloud Storage to find the active model version, loads those weights (cached between requests), runs detection and returns per-species counts such as `{"fox": 2, "cat": 1}`. **Videos:** one frame is extracted every 10 seconds and each frame is run through the detector. The stored count for each species is the highest count seen in any single frame, so the same animal is not counted twice across frames.
-7. **⑨ Persist.** `tagging` writes to the `Media` table in a single transaction: one `META` item (file type, file URL, thumbnail URL, colour attributes) and one `TAG#<species>` item per species with its count (§6).
+7. **⑨ Persist.** `tagging` writes to the `Media` table in a single transaction: it updates the `META` item from `PROCESSING` to `READY`, adding the thumbnail URL and colour attributes (file type and file URL are already there from `upload-url`), and puts one `TAG#<species>` item per species with its count (§6). If inference fails, the `META` item becomes `FAILED` instead (§3.1).
 8. **⑩ Notify.** Each new `TAG#` item appears on the DynamoDB Stream. The `notify` Lambda publishes to SNS with the species as message attributes, and each subscriber's **filter policy** decides who receives an email.
 
-## 4. Why EventBridge sits between S3 and the Lambdas
+### 3.1 File status
+
+Every file's `META` item has a `status` that the two Lambdas move forward with conditional writes:
+
+```
+           upload-url              tagging starts              tagging succeeds
+  (none) ───────────────► PENDING ───────────────► PROCESSING ───────────────► READY
+                           │    ▲                      │
+    TTL, if never          │    │ upload-url           │ tagging gives up
+    uploaded               ▼    │ (upload again)       ▼
+                       (deleted)└────────────────── FAILED
+```
+
+| Status | Meaning | Another `POST /upload-url` for the same file |
+|---|---|---|
+| `PENDING` | URL issued, file not in S3 yet | 200 with a fresh URL for the same key, so a failed upload can simply be retried |
+| `PROCESSING` | File in S3, tagging running | 409 |
+| `READY` | Tagged and searchable | 409 |
+| `FAILED` | Tagging gave up; the item has an `error` attribute | 200, upload again |
+
+- **Only `upload-url` creates `META` items.** `tagging` skips objects that have none, which can only be files someone put into the bucket by hand, bypassing the checksum check.
+- **`PENDING` is re-issued to anyone.** Every URL for a file points at the same key and is bound to the same checksum, so every upload writes the same bytes. Once Cognito is in place, a fresh URL will only go to the user who reserved the file, and others will get 409.
+- **`expires_at` only cleans up.** `upload-url` sets it 24 hours ahead as the table's TTL attribute, so abandoned reservations disappear. DynamoDB deletes expired items within a few days and they stay readable until then, so no code decides anything from it. `tagging` removes it when the file reaches `PROCESSING`.
+- **Duplicate deliveries are harmless.** SQS delivers at least once, so `tagging` may see the same upload twice. It accepts `PENDING` or `PROCESSING` when it starts, and it writes `READY` only while the item is still `PROCESSING`. A second delivery therefore cannot write the tags twice, and one for a `READY` or `FAILED` file is skipped.
+- **Retries.** Temporary errors from Cloud Run (network, timeout, 429, 5xx) are retried by SQS, and the file becomes `FAILED` on the 3rd attempt. Other 4xx answers and malformed results make it `FAILED` at once. If the Lambda itself crashes on every delivery, the message ends up in the dead-letter queue and the file stays `PROCESSING` until the message is redriven.
+- **Searches only see finished files.** `TAG#` items are written in the same transaction that sets `READY`, so files that are still being processed or have failed never appear in tag searches.
+
+## 4. Why EventBridge and SQS sit between S3 and the Lambdas
 
 S3 event notifications do **not** allow two configurations with the same event type and an overlapping prefix or suffix. As a result, `uploads/` cannot trigger both `thumbnail` and `tagging` directly. EventBridge solves this without any extra code:
 
@@ -72,11 +100,19 @@ S3 event notifications do **not** allow two configurations with the same event t
 
 An SNS topic fan-out (S3 → SNS → two Lambdas) would also work. EventBridge was chosen because its rules can filter on the object key and it needs no extra topic.
 
+**SQS in front of `tagging`.** Rule 2 does not invoke `tagging` directly. It sends the event to an SQS queue, and a Lambda event source mapping reads the queue one message at a time:
+
+- **Flow control.** The mapping's `MaximumConcurrency` is 2, the same as Cloud Run's instance limit. With a real model each instance handles about one file at a time, so if every upload invoked `tagging` straight away, a burst of uploads would overload Cloud Run and fail with 429. With the queue, the extra uploads simply wait.
+- **Nothing is lost while the function cannot run.** Messages stay in the queue for up to 4 days, for example while Lambda has turned the queue trigger off after a Learner Lab session ended. Capping a directly invoked function with reserved concurrency would also limit the load, but Lambda keeps throttled asynchronous events for at most 6 hours, and retries a failed invocation only twice.
+- **Retries without waiting inside Lambda.** When Cloud Run has a temporary problem, `tagging` raises an error and SQS delivers the message again after the visibility timeout. The function does not sleep between attempts, so no Lambda time is billed while waiting.
+- **Dead-letter queue.** A message that keeps crashing the function moves to `aussie-ecoguard-tagging-dlq` and is kept for 14 days. After a fix it can be sent back with one click ("Start DLQ redrive").
+- **Settings follow the AWS guidance for SQS event sources:** a visibility timeout of six times the function timeout (450 s for 75 s) and a `maxReceiveCount` of 5. `tagging` itself gives up and writes `FAILED` on the 3rd attempt (§3.1), so the 4th and 5th deliveries are only a margin for crashes.
+
 ## 5. Core features (Spec §4), requirement by requirement
 
 This section maps each requirement in Spec §4 to the flow that implements it. Every REST call goes through API Gateway (③) with the Cognito JWT, except the call to Cloud Run in ⑪, which carries the same JWT straight to GCP (§2).
 
-**Keys and URLs.** Every object key is derived from the file's SHA-256: `uploads/<sha256>.<ext>` and `thumbnails/<sha256>.jpg`. Any file URL or thumbnail URL can therefore be turned back into its `file_id` by parsing the path, with no extra lookup. The media bucket is private, so `search` returns short-lived **presigned GET URLs**.
+**Keys and URLs.** Every object key is derived from the file's SHA-256: `uploads/<sha256>` and `thumbnails/<sha256>.jpg`. The original's key has no extension, which is the usual design for content-addressed storage: the key depends only on the content, so the same bytes uploaded as `fox.jpg` and `fox.png` become one object. The type is kept as the object's `Content-Type` (used by browsers) and as `file_type` in the `META` item (used by `tagging` and the queries). Image and video decoders recognise the format from the file's first bytes, so the model does not need an extension either. Any file URL or thumbnail URL can therefore be turned back into its `file_id` by parsing the path, with no extra lookup. The media bucket is private, so `search` returns short-lived **presigned GET URLs**.
 
 ### 5.1 Model handling (Spec §4.1)
 
@@ -92,10 +128,10 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 | Requirement | How it is met | Diagram |
 |---|---|---|
 | Upload to cloud storage via REST or SDK | `POST /upload-url` returns a presigned PUT URL and the browser uploads straight to S3 (§3) | ③ ④ |
-| **Every upload triggers an event and a serverless function** | S3 **Object Created** → EventBridge → `thumbnail` and `tagging` Lambdas (§4) | ⑤ ⑥ |
-| Deduplication by checksum | The browser sends the SHA-256 first; `upload-url` rejects a checksum that already has a `META` item in `Media` with `409`. The presigned PUT is bound to that checksum so the content cannot be swapped, and the conditional write `attribute_not_exists(file_id)` on the `META` item stops two uploads racing | ③ |
-| Thumbnail generation | The EventBridge rule for `thumbnail` matches image suffixes only (`.jpg`, `.jpeg`, `.png`). The Lambda uses OpenCV to scale the longest side to 256 px, keeping the aspect ratio, saves a JPEG at quality 70 to `thumbnails/<sha256>.jpg`, and has `s3:GetObject` on `uploads/*` and `s3:PutObject` on `thumbnails/*` | ⑤ |
-| Tag the file and save type, tags, file URL and thumbnail URL | `tagging` sends a presigned GET URL to Cloud Run and writes the result to `Media` (one `META` item plus one `TAG#` item per species). Because thumbnail keys are deterministic, `tagging` can store `thumb_url` without waiting for the `thumbnail` Lambda | ⑥ ⑦ ⑧ ⑨ |
+| **Every upload triggers an event and a serverless function** | S3 **Object Created** → EventBridge → `thumbnail` Lambda, and → SQS → `tagging` Lambda (§4) | ⑤ ⑥ |
+| Deduplication by checksum | The browser sends the SHA-256 first; `upload-url` reserves it with a conditional write of a `PENDING` `META` item and returns `409` if the file is already `PROCESSING` or `READY` (§3.1). The presigned PUT is bound to that checksum so the content cannot be swapped, and because the key is `uploads/<sha256>` the same content is never stored twice | ③ |
+| Thumbnail generation | Keys have no extension, so the `thumbnail` Lambda checks the object's `Content-Type` and skips anything that is not an image. It uses OpenCV to scale the longest side to 256 px, keeping the aspect ratio, saves a JPEG at quality 70 to `thumbnails/<sha256>.jpg`, and has `s3:GetObject` on `uploads/*` and `s3:PutObject` on `thumbnails/*` | ⑤ |
+| Tag the file and save type, tags, file URL and thumbnail URL | `tagging` sends a presigned GET URL to Cloud Run and writes the result to `Media` (the `META` item becomes `READY`, plus one `TAG#` item per species). Because thumbnail keys are deterministic, `tagging` can store `thumb_url` without waiting for the `thumbnail` Lambda | ⑥ ⑦ ⑧ ⑨ |
 | Videos: **one frame every 10 seconds** | For a video, Cloud Run opens the presigned URL with OpenCV, seeks in 10-second steps (`CAP_PROP_POS_MSEC`), runs detection on each sampled frame, and keeps the highest count per species across frames | ⑦ |
 
 ### 5.3 Queries (Spec §4.3)
@@ -136,7 +172,7 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 #### Delete files
 
 - **Request:** `POST /delete` with `{"url": ["<url1>", "<url2>"]}`
-- **Flow:** `delete-files` parses each `file_id`, deletes `uploads/<sha256>.<ext>` and `thumbnails/<sha256>.jpg` from S3, then runs one query, `file_id = <sha256>`, to get the file's `META` item and all of its `TAG#` items, and removes them with `BatchWriteItem`.
+- **Flow:** `delete-files` parses each `file_id`, deletes `uploads/<sha256>` and `thumbnails/<sha256>.jpg` from S3, then runs one query, `file_id = <sha256>`, to get the file's `META` item and all of its `TAG#` items, and removes them with `BatchWriteItem`.
 
 #### Chatbot with natural-language queries
 
@@ -162,13 +198,14 @@ All data lives in **one table, `Media`**. A file's metadata and its tags share t
 
 ### 6.1 Example
 
-| `file_id` (PK) | `sk` (SK) | `file_url` | `thumb_url` | `file_type` | `attributes` | `owner` | `created_at` | `tag` | `tag_count` |
-|---|---|---|---|---|---|---|---|---|---|
-| `aaa…` | `META` | `uploads/aaa….jpg` | `thumbnails/aaa….jpg` | `image` | `[]` | `<sub>` | `2026-10-05T…` | | |
-| `aaa…` | `TAG#fox` | | | | | | | `fox` | `2` |
-| `aaa…` | `TAG#cat` | | | | | | | `cat` | `1` |
-| `bbb…` | `META` | `uploads/bbb….jpg` | `thumbnails/bbb….jpg` | `image` | `["orange"]` | `<sub>` | `2026-10-06T…` | | |
-| `bbb…` | `TAG#cat` | | | | | | | `cat` | `1` |
+| `file_id` (PK) | `sk` (SK) | `status` | `file_url` | `thumb_url` | `file_type` | `attributes` | `owner` | `created_at` | `tag` | `tag_count` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `aaa…` | `META` | `READY` | `uploads/aaa…` | `thumbnails/aaa….jpg` | `image` | `[]` | `<sub>` | `2026-10-05T…` | | |
+| `aaa…` | `TAG#fox` | | | | | | | | `fox` | `2` |
+| `aaa…` | `TAG#cat` | | | | | | | | `cat` | `1` |
+| `bbb…` | `META` | `READY` | `uploads/bbb…` | `thumbnails/bbb….jpg` | `image` | `["orange"]` | `<sub>` | `2026-10-06T…` | | |
+| `bbb…` | `TAG#cat` | | | | | | | | `cat` | `1` |
+| `ccc…` | `META` | `PENDING` | `uploads/ccc…` | | `video` | | `<sub>` | `2026-10-07T…` | | |
 
 Empty cells are attributes the item simply does not have. They are not stored as nulls.
 
@@ -176,10 +213,10 @@ Empty cells are attributes the item simply does not have. They are not stored as
 
 | Item type | `sk` value | Attributes |
 |---|---|---|
-| File metadata | `META` | `file_url`, `thumb_url` (absent for videos), `file_type` (`image` / `video`), `attributes` (colour / breed terms, e.g. `["orange"]`), `owner` (Cognito `sub`), `created_at` (ISO timestamp, used for "recent sightings") |
+| File metadata | `META` | `status` (`PENDING` / `PROCESSING` / `READY` / `FAILED`, §3.1), `file_url`, `file_type` (`image` / `video`), `owner` (Cognito `sub`), `created_at` (ISO timestamp, used for "recent sightings"). Added by `tagging` when the file is `READY`: `thumb_url` (absent for videos), `attributes` (colour / breed terms, e.g. `["orange"]`), `model`, `tagged_at`. Only while `PENDING`: `expires_at` (TTL). Only when `FAILED`: `error` |
 | Tag | `TAG#<species>`, e.g. `TAG#cane toad` | `tag` (species name), `tag_count` (number) |
 
-- **Partition key `file_id`** is the file's SHA-256 (see "Keys and URLs" in §5). It is also the deduplication key: the `META` item is written with `attribute_not_exists(file_id)`.
+- **Partition key `file_id`** is the file's SHA-256 (see "Keys and URLs" in §5). It is also the deduplication key: `upload-url` reserves it with a conditional write of the `META` item (§3.1).
 - **Sort key `sk`**: the `TAG#` prefix tells the item types apart and allows `begins_with(sk, "TAG#")` to fetch only a file's tags.
 - The count attribute is named `tag_count` because `count` is a DynamoDB reserved word.
 - Key strings are built in one shared helper module, packaged as a Lambda Layer, so no Lambda hand-writes `"TAG#" + name`.
@@ -198,7 +235,10 @@ This is a **sparse index**: `META` items have no `tag` attribute, so DynamoDB le
 
 | Operation | DynamoDB calls |
 |---|---|
-| Save a newly tagged file | `TransactWriteItems`: `Put` `META` (conditional) + `Put` one `TAG#` item per species |
+| Reserve an upload (`upload-url`) | `PutItem` `META` with `status = PENDING` and `expires_at`, condition `attribute_not_exists(file_id) OR status IN (PENDING, FAILED)` |
+| Start tagging | `UpdateItem` `META`: `SET status = PROCESSING REMOVE expires_at`, condition `status IN (PENDING, PROCESSING)`; returns the item, including `file_type` |
+| Save a newly tagged file | `TransactWriteItems`: `Update` `META` to `READY` (condition `status = PROCESSING`) + `Put` one `TAG#` item per species |
+| Tagging failed | `UpdateItem` `META`: `SET status = FAILED, error = <reason>`, condition `status = PROCESSING` |
 | Get a file with all its tags | One `Query`: `file_id = :id`. This returns `META` and every `TAG#` item together and plays the role of the join |
 | Search by tags with minimum counts | One `Query` on `tag-count-index` per tag, intersect the `file_id`s, then `BatchGetItem` the `META` items |
 | Thumbnail URL to original | Parse `file_id` from the URL, then `GetItem` `{file_id, sk: "META"}` |
@@ -210,6 +250,7 @@ This is a **sparse index**: `META` items have no `tag` attribute, so DynamoDB le
 ### 6.5 Consistency
 
 - **Tags are stored exactly once**, as `TAG#` items. There is no second copy that could drift out of sync, and adding or removing a tag touches one item.
+- **Every status change is a conditional write** (§3.1). Two requests or two deliveries of the same event cannot both win, and a file's status only changes along the arrows of the diagram there.
 - **The GSI is eventually consistent.** A new tag normally becomes searchable within a second. A search issued immediately after an upload may miss the new file, which is acceptable for this application. Reads by primary key, such as file details or "thumbnail to original", can use strongly consistent reads.
 
 ## 7. Model options
@@ -309,7 +350,10 @@ Switching models, adding a species or changing a threshold means uploading weigh
 | **AWS calls GCP, never the other way round** | AWS Academy credentials expire every few hours, so GCP must not hold AWS keys. AWS sends GCP a presigned URL and gets the result back in the HTTP response, and GCP never touches S3 or DynamoDB with AWS credentials |
 | Presigned URL uploads straight to S3 | Gets around the 10 MB API Gateway / 6 MB Lambda payload limits, and the large file never passes through a Lambda |
 | Checksum-signed presigned PUT | Deduplication cannot be bypassed by sending one hash and uploading different content |
+| Reserve the checksum in `upload-url` (`PENDING`), not when tagging finishes | Closes the gap between issuing a URL and finishing inference, in which the same file could otherwise be uploaded and tagged twice. One conditional write is atomic |
+| Object keys without an extension (`uploads/<sha256>`) | Content-addressed storage: the key depends only on the bytes, so renaming a file or changing its extension cannot store it twice. The type lives in `Content-Type` and `file_type` |
 | EventBridge between S3 and the processing Lambdas | One S3 event can trigger several Lambdas, and the rules filter by object key prefix |
+| SQS between EventBridge and `tagging` | Caps tagging at Cloud Run's capacity, keeps uploads for days while the function cannot run, retries without waiting inside Lambda, and keeps repeated failures in a dead-letter queue |
 | DynamoDB instead of RDS | No SQL joins needed; serverless, no VPC or NAT, Streams for notifications |
 | Single-table design (`Media`) with a sparse GSI | A file and its tags form one item collection, fetched with one query; each tag is stored once, so there is nothing to keep in sync; the sparse GSI on `tag` + `tag_count` answers "at least N of species X" with a key condition |
 | SNS for notifications | Native filter policies match the "notify me about species X" requirement with no custom matching code |

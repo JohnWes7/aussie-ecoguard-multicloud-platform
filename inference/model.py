@@ -23,6 +23,7 @@ import os
 from collections import Counter
 
 OTHER = "other"  # a box we could not name with enough confidence
+NOT_ANIMAL = "not an animal"  # blank / vehicle / human; config.json rules use the same text
 
 
 def load_config(model_dir):
@@ -51,10 +52,23 @@ def to_species(label, rules):
     and species in that family; in Australia the felids are all cats.
     """
     key = taxonomy_key(label)
+    if is_class_only(key):
+        return None
     for prefix, species in rules:
         if key.startswith(prefix):
             return species
     return None
+
+
+def is_class_only(key):
+    """True for labels that only name the class, e.g. "reptile" or "bird".
+
+    These are too vague to trust: SpeciesNet often calls a cane toad "reptile".
+    Treating them as unknown lets the image fall back to CLIP. A bird that
+    SpeciesNet places in an order or family still maps to "bird".
+    """
+    fields = key.split(";")
+    return len(fields) == 5 and fields[0] != "" and fields[1] == ""
 
 
 def best_species(classes, scores, rules):
@@ -75,9 +89,32 @@ def best_species(classes, scores, rules):
     return species, score
 
 
-def apply_threshold(named, threshold):
-    """[(label, score)] -> [label], with OTHER for scores below threshold."""
-    return [label if score >= threshold else OTHER for label, score in named]
+def apply_threshold(named, threshold, strict=None):
+    """[(label, score)] -> [label], with OTHER for scores below threshold.
+
+    strict gives some labels a higher threshold of their own. "not an animal"
+    needs a very high score: MegaDetector already found an animal in the box,
+    and small or distant animals are often called "blank" by the classifier.
+    Below that score the box stays OTHER, so smoothing or CLIP can still name
+    it. (SpeciesNet's own ensemble trusts "blank" over the detector only above
+    0.99.)
+    """
+    strict = strict or {}
+    return [label if score >= strict.get(label, threshold) else OTHER for label, score in named]
+
+
+def best_label(labels, probs):
+    """Add up the probabilities of candidates that share a label, return the best.
+
+    CLIP's "not an animal" is described by several prompts (an empty scene, a
+    statue, a vehicle), because CLIP does not understand negation: a prompt
+    saying "not an animal" looks like "animal" to it.
+    """
+    totals = Counter()
+    for label, p in zip(labels, probs):
+        totals[label] += p
+    label, p = totals.most_common(1)[0]
+    return label, p
 
 
 def smooth(labels):
@@ -100,13 +137,13 @@ def smooth(labels):
     return smoothed
 
 
-def needs_fallback(named, threshold):
-    """True if SpeciesNet named no box with confidence >= threshold.
+def needs_fallback(labels):
+    """True if SpeciesNet could not name any box (all OTHER after thresholds).
 
     Then the image goes to CLIP instead. An image with no boxes at all has
     nothing to classify, so it never falls back.
     """
-    return bool(named) and max(score for _, score in named) < threshold
+    return bool(labels) and all(label == OTHER for label in labels)
 
 
 def count_species(labels, species, unknown_tag):
@@ -174,9 +211,14 @@ class Pipeline:
         tokenizer = open_clip.get_tokenizer(c["clip_arch"])
 
         # The text side of CLIP never changes, so encode all prompts once.
+        # Candidates: one per species (its templates averaged), plus one per
+        # "not an animal" prompt, so CLIP has somewhere to put a statue or an
+        # empty scene instead of forcing it into a species.
         names = c["clip_prompt_names"]
-        self.species_text = self._encode_texts(
-            [[t.format(names.get(s, s)) for t in c["clip_templates"]] for s in c["species"]], tokenizer)
+        species_prompts = [[t.format(names.get(s, s)) for t in c["clip_templates"]] for s in c["species"]]
+        not_animal_prompts = [[p] for p in c["clip_not_animal_prompts"]]
+        self.clip_labels = c["species"] + [NOT_ANIMAL] * len(not_animal_prompts)
+        self.species_text = self._encode_texts(species_prompts + not_animal_prompts, tokenizer)
         self.colour_text = {
             s: self._encode_texts([[f"a photo of a {colour} {s}."] for colour in c["colours"]], tokenizer)
             for s in c["colour_for"]
@@ -187,9 +229,16 @@ class Pipeline:
         c = self.config
         boxes = self.find_animals(img)
         named = self.name_with_speciesnet(img, boxes)
-        if needs_fallback(named, c["species_threshold"]):
-            named = [self.clip_top(crop(img, b), self.species_text, c["species"]) for b in boxes]
-        labels = smooth(apply_threshold(named, c["species_threshold"]))
+        # SpeciesNet's "blank" must be very sure to overrule MegaDetector (see
+        # apply_threshold).
+        labels = apply_threshold(named, c["species_threshold"], {NOT_ANIMAL: c["not_animal_threshold"]})
+        if needs_fallback(labels):
+            # CLIP is the last model in the chain: if "not an animal" is its
+            # best answer, drop the box rather than tag it "other animal" on
+            # MegaDetector's word alone (e.g. a statue).
+            named = [self.clip_top(crop(img, b), self.species_text, self.clip_labels) for b in boxes]
+            labels = apply_threshold(named, c["species_threshold"], {NOT_ANIMAL: 0.0})
+        labels = smooth(labels)
         tags = count_species(labels, c["species"], c["unknown_tag"])
 
         pet_colours = [self.clip_top(crop(img, b), self.colour_text[label], c["colours"])
@@ -222,8 +271,7 @@ class Pipeline:
             f = self.clip.encode_image(self.clip_preprocess(image).unsqueeze(0))
             f = f / f.norm(dim=-1, keepdim=True)
             probs = (100.0 * f @ text_features.T).softmax(dim=-1)[0]
-        best = int(probs.argmax())
-        return labels[best], float(probs[best])
+        return best_label(labels, probs.tolist())
 
     def _encode_texts(self, texts_per_label, tokenizer):
         """One embedding per label: the average over its prompts (prompt ensembling)."""

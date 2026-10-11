@@ -81,9 +81,9 @@ def test_taxonomy_key(model):
     (WOMBAT, "wombat"),
     (EMU, "emu"),                   # emu rule comes before the bird rule
     (KOOKABURRA, "bird"),
-    (BIRD, "bird"),
-    (FROGS, "frog"),
-    (REPTILE, "reptile"),
+    (BIRD, None),                   # class only: too vague, left to CLIP
+    (FROGS, "frog"),                # order (anura) is specific enough
+    (REPTILE, None),                # class only: SpeciesNet calls cane toads "reptile"
     (DUNNART, None),                # no rule: becomes "other animal"
     (MAMMAL, None),
     (HUMAN, "not an animal"),
@@ -94,9 +94,17 @@ def test_to_species_with_the_deployed_rules(model, config, label, tag):
     assert model.to_species(label, config["species_rules"]) == tag
 
 
-def test_rules_map_to_species_or_to_not_an_animal(config):
+def test_is_class_only(model):
+    assert model.is_class_only("reptilia;;;;")
+    assert model.is_class_only("aves;;;;")
+    assert not model.is_class_only("amphibia;anura;;;")
+    assert not model.is_class_only(";;;;")       # blank / vehicle
+    assert not model.is_class_only("")
+
+
+def test_rules_map_to_species_or_to_not_an_animal(model, config):
     targets = {tag for _, tag in config["species_rules"]}
-    assert targets - set(config["species"]) == {"not an animal"}
+    assert targets - set(config["species"]) == {model.NOT_ANIMAL}
     assert "not an animal" not in config["species"]
     assert config["unknown_tag"] not in config["species"]
     assert set(config["colour_for"]) <= set(config["species"])
@@ -143,6 +151,23 @@ def test_apply_threshold(model):
     assert model.apply_threshold(named, 0.3) == ["fox", "fox", model.OTHER, model.OTHER]
 
 
+def test_not_an_animal_needs_its_own_stricter_threshold(model):
+    # a tiny distant pig that the classifier calls "blank" stays OTHER, so
+    # smoothing can still turn it into a pig
+    named = [("feral pig", 0.9), ("feral pig", 0.8), (model.NOT_ANIMAL, 0.7), (model.NOT_ANIMAL, 0.995)]
+    labels = model.apply_threshold(named, 0.3, strict={model.NOT_ANIMAL: 0.99})
+    assert labels == ["feral pig", "feral pig", model.OTHER, model.NOT_ANIMAL]
+    assert model.smooth(labels) == ["feral pig", "feral pig", "feral pig", model.NOT_ANIMAL]
+
+
+def test_best_label_adds_up_prompts_that_share_a_label(model):
+    labels = ["fox", "cat", "not an animal", "not an animal"]
+    probs = [0.35, 0.05, 0.3, 0.3]
+    label, p = model.best_label(labels, probs)
+    assert label == "not an animal"
+    assert p == pytest.approx(0.6)
+
+
 def test_smooth_unsure_boxes_follow_a_dominant_species(model):
     O = model.OTHER
     # 17 distant feral pigs: SpeciesNet was only sure about 4 of them
@@ -173,10 +198,26 @@ def test_smooth_with_nothing_named(model):
     assert model.smooth([]) == []
 
 
-def test_needs_fallback(model):
-    assert model.needs_fallback([("cane toad", 0.16), ("cat", 0.29)], 0.3)
-    assert not model.needs_fallback([("cane toad", 0.16), ("cat", 0.32)], 0.3)
-    assert not model.needs_fallback([], 0.3)  # no animals: nothing to classify
+def test_needs_fallback_when_speciesnet_named_no_box(model):
+    O = model.OTHER
+    assert model.needs_fallback([O, O])
+    assert not model.needs_fallback(["cat", O])
+    assert not model.needs_fallback([model.NOT_ANIMAL])  # sure it is not an animal
+    assert not model.needs_fallback([])                  # no animals: nothing to classify
+
+
+def test_clip_not_an_animal_wins_without_a_threshold(model):
+    # CLIP is the last model: a statue whose best CLIP answer is "not an
+    # animal" at only 0.25 is dropped, not tagged "other animal"
+    labels = model.apply_threshold([(model.NOT_ANIMAL, 0.25)], 0.3, {model.NOT_ANIMAL: 0.0})
+    assert labels == [model.NOT_ANIMAL]
+
+
+def test_weak_not_an_animal_falls_back_to_clip(model):
+    # a cane toad statue: SpeciesNet says "vehicle" 0.76, too weak to drop
+    # the box, so it is unnamed and the image goes to CLIP
+    labels = model.apply_threshold([(model.NOT_ANIMAL, 0.76)], 0.3, {model.NOT_ANIMAL: 0.99})
+    assert model.needs_fallback(labels)
 
 
 def test_count_species_counts_unnamed_animals_as_other_animal(model, config):

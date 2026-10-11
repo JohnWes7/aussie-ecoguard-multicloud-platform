@@ -8,6 +8,7 @@
   "detection_threshold": 0.2,
   "species_threshold": 0.3,
   "colour_threshold": 0.4,
+  "not_animal_threshold": 0.99,
 
   "species": [
     "fox", "rabbit", "feral pig", "cane toad", "cat", "dog",
@@ -55,6 +56,10 @@
   },
   "clip_templates": ["a camera trap photo of a {}.", "a photo of a {}.",
                      "a blurry photo of a {}.", "a night infrared photo of a {}."],
+  "clip_not_animal_prompts": ["a camera trap photo of an empty scene with no animals.",
+                              "a photo of grass, rocks and branches.",
+                              "a photo of a statue or sculpture.",
+                              "a photo of a car or other vehicle."],
 
   "colours": ["orange", "black", "white", "grey", "brown"],
   "colour_for": ["cat", "dog"]

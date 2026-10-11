@@ -6,5 +6,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 
 # Cloud Run sends requests to $PORT (8080 by default).
-# --timeout 0 leaves request timeouts to Cloud Run.
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
+# One uvicorn process; FastAPI runs the plain-def endpoints in its thread pool.
+# Request timeouts are left to Cloud Run (--timeout in deploy_gcp.sh).
+CMD exec uvicorn main:app --host 0.0.0.0 --port $PORT

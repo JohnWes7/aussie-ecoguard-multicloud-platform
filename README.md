@@ -26,7 +26,7 @@ infra/
   deploy_gcp.sh      Builds and deploys the inference service to Cloud Run
 lambdas/
   upload_url/app.py  POST /upload-url
-inference/           Cloud Run service (Flask + Dockerfile), currently a stub
+inference/           Cloud Run service (FastAPI + Dockerfile), currently a stub
 tests/               Unit tests (pytest + moto, no AWS account needed)
 scripts/
   smoke_test.sh      End-to-end checks against the deployed AWS stack
@@ -161,7 +161,7 @@ Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credential
 | Status | Meaning | Body |
 |---|---|---|
 | 200 | Done | `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "stub-v1"}` |
-| 400 | `url` is not a presigned URL for an `aussie-ecoguard-media-*` bucket's `uploads/`, or bad `file_type` | `{error}` |
+| 422 | `url` is not a presigned URL for an `aussie-ecoguard-media-*` bucket's `uploads/`, bad `file_type`, or the body is not JSON (FastAPI validation) | `{"detail": [...]}` |
 | 502 | The file could not be downloaded (e.g. the URL or the credentials that signed it expired) | `{"error": "could not download file (S3 returned 403)"}` |
 
 Cloud Run downloads the file itself from the presigned URL instead of receiving it base64-encoded: Cloud Run requests are limited to 32 MiB and base64 adds 33%, so videos would not fit.
@@ -169,6 +169,8 @@ Cloud Run downloads the file itself from the presigned URL instead of receiving 
 The stub really downloads the file but runs no model. Its tags are derived from the file's SHA-256 (1–2 species, counts 1–3, plus a colour for cats and dogs), so the same file always gets the same tags. The request and response format will stay the same when the real model replaces it.
 
 `GET /health` returns `{"status": "ok", "model": "stub-v1"}`.
+
+`GET /docs` is the interactive API documentation that FastAPI generates from the request and response types in `inference/main.py` (`/openapi.json` has the raw schema).
 
 ## Testing
 

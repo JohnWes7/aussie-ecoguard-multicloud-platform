@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import requests
+from fastapi.testclient import TestClient
 
 MAIN = Path(__file__).resolve().parent.parent / "inference" / "main.py"
 GOOD_URL = (
@@ -24,7 +25,7 @@ def main():
 
 @pytest.fixture
 def client(main):
-    return main.app.test_client()
+    return TestClient(main.app)
 
 
 class FakeResponse:
@@ -69,7 +70,7 @@ def s3_file(main, monkeypatch):
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "ok", "model": "stub-v1"}
+    assert response.json() == {"status": "ok", "model": "stub-v1"}
 
 
 def test_infer_returns_tags_from_the_downloaded_file(client, main, s3_file):
@@ -79,7 +80,7 @@ def test_infer_returns_tags_from_the_downloaded_file(client, main, s3_file):
 
     assert response.status_code == 200
     assert fetched == [GOOD_URL]
-    body = response.get_json()
+    body = response.json()
     assert body["model"] == "stub-v1"
     assert 1 <= len(body["tags"]) <= 2
     assert all(species in main.SPECIES for species in body["tags"])
@@ -123,7 +124,7 @@ def test_regional_s3_url_is_allowed(client, s3_file):
 def test_urls_outside_the_media_bucket_are_rejected(client, s3_file, url):
     fetched = s3_file()
     response = client.post("/infer", json={"url": url, "file_type": "image"})
-    assert response.status_code == 400
+    assert response.status_code == 422
     assert fetched == []  # never fetched
 
 
@@ -131,12 +132,12 @@ def test_urls_outside_the_media_bucket_are_rejected(client, s3_file, url):
 def test_bad_file_type_is_rejected(client, s3_file, file_type):
     s3_file()
     response = client.post("/infer", json={"url": GOOD_URL, "file_type": file_type})
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 def test_body_that_is_not_json_is_rejected(client):
-    response = client.post("/infer", data="{", content_type="application/json")
-    assert response.status_code == 400
+    response = client.post("/infer", content="{", headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
 
 
 def test_failed_download_returns_502_without_leaking_the_url(client, s3_file):
@@ -144,9 +145,9 @@ def test_failed_download_returns_502_without_leaking_the_url(client, s3_file):
     response = client.post("/infer", json={"url": GOOD_URL, "file_type": "image"})
 
     assert response.status_code == 502
-    error = response.get_json()["error"]
+    error = response.json()["error"]
     assert error == "could not download file (S3 returned 400)"
-    assert "X-Amz" not in response.get_data(as_text=True)
+    assert "X-Amz" not in response.text
 
 
 def test_network_error_returns_502(client, main, monkeypatch):
@@ -157,4 +158,11 @@ def test_network_error_returns_502(client, main, monkeypatch):
     response = client.post("/infer", json={"url": GOOD_URL, "file_type": "image"})
 
     assert response.status_code == 502
-    assert response.get_json()["error"] == "could not download file"
+    assert response.json()["error"] == "could not download file"
+
+
+def test_docs_describe_the_infer_endpoint(client):
+    assert client.get("/docs").status_code == 200
+    schema = client.get("/openapi.json").json()
+    assert "/infer" in schema["paths"]
+    assert "InferRequest" in schema["components"]["schemas"]

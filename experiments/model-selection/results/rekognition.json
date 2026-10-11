@@ -1,0 +1,5908 @@
+{
+ "pipeline": "rekognition",
+ "load_s": 0.4,
+ "images": {
+  "fox_trap_night.jpg": {
+   "time_s": 2.52,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 95.01,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Cat",
+     "conf": 95.01,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 95.01,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 95.01,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 95.01,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 94.22,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 94.22,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 75.28,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 71.88,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 63.58,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Arctic Fox",
+     "conf": 57.9,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 57.23,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grey Fox",
+     "conf": 55.56,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Weather",
+     "conf": 54.7,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Red Fox",
+     "conf": 53.55,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Coyote",
+     "conf": 52.69,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fog",
+     "conf": 51.17,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Weather"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wolf",
+     "conf": 50.39,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "fox_otway.jpg": {
+   "time_s": 0.62,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 98.57,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 98.57,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 98.57,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 98.57,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 98.57,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 98.57,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 98.27,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 98.27,
+       "colours": [
+        "grey",
+        "grey",
+        "black"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Pet",
+     "conf": 98.27,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Red Fox",
+     "conf": 91.26,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grey Fox",
+     "conf": 57.8,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Red Wolf",
+     "conf": 54.91,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Wolf"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wolf",
+     "conf": 54.91,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Coyote",
+     "conf": 53.21,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Zoo",
+     "conf": 51.73,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 50.56,
+     "parents": [],
+     "instances": []
+    }
+   ]
+  },
+  "fox_mornington.jpg": {
+   "time_s": 0.66,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.53,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 99.53,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 99.53,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 99.53,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.53,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 99.53,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Coyote",
+     "conf": 84.88,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pig",
+     "conf": 78.76,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 78.76,
+       "colours": [
+        "black",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Red Fox",
+     "conf": 73.37,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grey Fox",
+     "conf": 57.65,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 57.11,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Plant",
+     "conf": 56.86,
+     "parents": [],
+     "instances": [
+      {
+       "conf": 55.46,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Tree",
+     "conf": 56.86,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree Trunk",
+     "conf": 56.32,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Red Wolf",
+     "conf": 55.35,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Wolf"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wolf",
+     "conf": 55.35,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 53.89,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 53.89,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Wilderness",
+     "conf": 53.89,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 53.42,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 51.05,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rainforest",
+     "conf": 51.05,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Deer",
+     "conf": 50.7,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Jungle",
+     "conf": 50.61,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 50.51,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grove",
+     "conf": 50.01,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "fox_play.jpg": {
+   "time_s": 0.92,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.96,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 99.96,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 99.96,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 99.96,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.96,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 99.96,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bear",
+     "conf": 98.06,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 98.06,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Grass",
+     "conf": 95.82,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Plant",
+     "conf": 95.82,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 89.59,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 89.59,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Red Fox",
+     "conf": 73.52,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Coyote",
+     "conf": 71.95,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 67.21,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Field",
+     "conf": 62.14,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Grassland",
+     "conf": 57.51,
+     "parents": [
+      "Field",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 57.51,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Red Wolf",
+     "conf": 56.92,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Wolf"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wolf",
+     "conf": 56.92,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grey Fox",
+     "conf": 56.4,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Savanna",
+     "conf": 53.15,
+     "parents": [
+      "Field",
+      "Grassland",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Farm",
+     "conf": 53.11,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pasture",
+     "conf": 53.11,
+     "parents": [
+      "Countryside",
+      "Farm",
+      "Field",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rural",
+     "conf": 53.11,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Deer",
+     "conf": 53.1,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Meadow",
+     "conf": 52.77,
+     "parents": [
+      "Countryside",
+      "Field",
+      "Grassland",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 52.34,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 50.97,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Impala",
+     "conf": 50.7,
+     "parents": [
+      "Animal",
+      "Antelope",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cheetah",
+     "conf": 50.66,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wilderness",
+     "conf": 50.32,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "rabbit_trough.jpg": {
+   "time_s": 0.65,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 94.5,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Kangaroo",
+     "conf": 94.5,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 94.5,
+       "colours": []
+      },
+      {
+       "conf": 89.06,
+       "colours": []
+      },
+      {
+       "conf": 84.16,
+       "colours": []
+      },
+      {
+       "conf": 82.1,
+       "colours": []
+      },
+      {
+       "conf": 80.6,
+       "colours": []
+      },
+      {
+       "conf": 77.16,
+       "colours": []
+      },
+      {
+       "conf": 75.22,
+       "colours": []
+      },
+      {
+       "conf": 73.5,
+       "colours": []
+      },
+      {
+       "conf": 71.46,
+       "colours": []
+      },
+      {
+       "conf": 70.0,
+       "colours": []
+      },
+      {
+       "conf": 68.12,
+       "colours": []
+      },
+      {
+       "conf": 67.37,
+       "colours": []
+      },
+      {
+       "conf": 61.29,
+       "colours": []
+      },
+      {
+       "conf": 50.33,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 94.5,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "War",
+     "conf": 83.34,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Cattle",
+     "conf": 73.16,
+     "parents": [
+      "Animal",
+      "Livestock",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cow",
+     "conf": 73.16,
+     "parents": [
+      "Animal",
+      "Cattle",
+      "Livestock",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 73.16,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Bird",
+     "conf": 70.73,
+     "parents": [
+      "Animal"
+     ],
+     "instances": [
+      {
+       "conf": 70.73,
+       "colours": []
+      },
+      {
+       "conf": 66.34,
+       "colours": []
+      },
+      {
+       "conf": 60.81,
+       "colours": []
+      },
+      {
+       "conf": 54.99,
+       "colours": []
+      },
+      {
+       "conf": 54.54,
+       "colours": []
+      },
+      {
+       "conf": 53.4,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Water",
+     "conf": 69.69,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sheep",
+     "conf": 63.3,
+     "parents": [
+      "Animal",
+      "Livestock",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 63.3,
+       "colours": []
+      },
+      {
+       "conf": 57.27,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Outdoors",
+     "conf": 60.15,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Herd",
+     "conf": 55.1,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rabbit",
+     "conf": 55.0,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Antelope",
+     "conf": 54.5,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Impala",
+     "conf": 54.5,
+     "parents": [
+      "Animal",
+      "Antelope",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 54.24,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Ground",
+     "conf": 53.94,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 52.97,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sea Lion",
+     "conf": 52.85,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Sea Life"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Coyote",
+     "conf": 52.46,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Crater",
+     "conf": 52.21,
+     "parents": [
+      "Mountain",
+      "Nature",
+      "Outdoors",
+      "Volcano"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tortoise",
+     "conf": 51.84,
+     "parents": [
+      "Animal",
+      "Reptile",
+      "Sea Life",
+      "Turtle"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Archaeology",
+     "conf": 51.73,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Mole",
+     "conf": 51.7,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 51.67,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rodent",
+     "conf": 51.6,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bull",
+     "conf": 51.56,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hunting",
+     "conf": 51.34,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Pond",
+     "conf": 51.32,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Water"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hole",
+     "conf": 51.08,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Lion",
+     "conf": 50.97,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "rabbit_tasmania.jpg": {
+   "time_s": 0.73,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.84,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Hare",
+     "conf": 99.84,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Rodent"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.84,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rodent",
+     "conf": 99.84,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rat",
+     "conf": 93.39,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Rodent"
+     ],
+     "instances": [
+      {
+       "conf": 93.39,
+       "colours": [
+        "green",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Rabbit",
+     "conf": 88.84,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 55.01,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "rabbit_hidden.jpg": {
+   "time_s": 0.79,
+   "boxes": [
+    {
+     "name": "Plant",
+     "conf": 99.6,
+     "parents": [],
+     "instances": [
+      {
+       "conf": 54.67,
+       "colours": [
+        "grey",
+        "green",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Vegetation",
+     "conf": 99.6,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bamboo",
+     "conf": 97.35,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 69.18,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 69.18,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 69.18,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 69.18,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 69.18,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rainforest",
+     "conf": 61.25,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Jungle",
+     "conf": 56.71,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grove",
+     "conf": 56.5,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bamboo Shoot",
+     "conf": 56.24,
+     "parents": [
+      "Bamboo",
+      "Food",
+      "Plant",
+      "Produce",
+      "Vegetable"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Food",
+     "conf": 56.24,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Produce",
+     "conf": 56.24,
+     "parents": [
+      "Food"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetable",
+     "conf": 56.24,
+     "parents": [
+      "Food",
+      "Plant",
+      "Produce"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Scenery",
+     "conf": 55.73,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sunlight",
+     "conf": 52.89,
+     "parents": [],
+     "instances": []
+    }
+   ]
+  },
+  "rabbit_csiro.jpg": {
+   "time_s": 0.69,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 97.79,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 97.79,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rabbit",
+     "conf": 97.79,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kangaroo",
+     "conf": 95.7,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 95.7,
+       "colours": []
+      },
+      {
+       "conf": 87.44,
+       "colours": []
+      },
+      {
+       "conf": 86.81,
+       "colours": []
+      },
+      {
+       "conf": 80.95,
+       "colours": [
+        "grey",
+        "black",
+        "grey"
+       ]
+      },
+      {
+       "conf": 71.06,
+       "colours": []
+      },
+      {
+       "conf": 68.07,
+       "colours": []
+      },
+      {
+       "conf": 62.27,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Cat",
+     "conf": 91.22,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 91.22,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Pet",
+     "conf": 91.22,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rat",
+     "conf": 79.43,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Rodent"
+     ],
+     "instances": [
+      {
+       "conf": 79.43,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Rodent",
+     "conf": 79.43,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Antelope",
+     "conf": 77.78,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 77.78,
+       "colours": []
+      },
+      {
+       "conf": 70.93,
+       "colours": [
+        "grey",
+        "black",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Wildlife",
+     "conf": 77.78,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hare",
+     "conf": 75.73,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Rodent"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 56.57,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Field",
+     "conf": 54.24,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Grassland",
+     "conf": 54.24,
+     "parents": [
+      "Field",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 54.24,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 54.24,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Savanna",
+     "conf": 52.2,
+     "parents": [
+      "Field",
+      "Grassland",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 52.06,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 52.06,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 52.06,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "pig_feral.jpg": {
+   "time_s": 0.68,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Boar",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Hog",
+      "Mammal",
+      "Pig",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hog",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pig"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 100.0,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pig",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 99.83,
+       "colours": [
+        "grey",
+        "black",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Wildlife",
+     "conf": 100.0,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 53.57,
+     "parents": [],
+     "instances": []
+    }
+   ]
+  },
+  "pig_feral_group.jpg": {
+   "time_s": 0.61,
+   "boxes": [
+    {
+     "name": "Land",
+     "conf": 99.9,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 99.9,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 99.9,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Animal",
+     "conf": 99.56,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Bear",
+     "conf": 99.56,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 99.56,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.56,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 99.56,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 98.36,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bird",
+     "conf": 94.23,
+     "parents": [
+      "Animal"
+     ],
+     "instances": [
+      {
+       "conf": 94.23,
+       "colours": []
+      },
+      {
+       "conf": 89.28,
+       "colours": []
+      },
+      {
+       "conf": 76.32,
+       "colours": []
+      },
+      {
+       "conf": 75.07,
+       "colours": []
+      },
+      {
+       "conf": 71.92,
+       "colours": []
+      },
+      {
+       "conf": 66.49,
+       "colours": []
+      },
+      {
+       "conf": 63.14,
+       "colours": []
+      },
+      {
+       "conf": 62.7,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Cow",
+     "conf": 93.25,
+     "parents": [
+      "Animal",
+      "Cattle",
+      "Livestock",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 93.25,
+       "colours": []
+      },
+      {
+       "conf": 89.97,
+       "colours": []
+      },
+      {
+       "conf": 85.03,
+       "colours": []
+      },
+      {
+       "conf": 78.59,
+       "colours": []
+      },
+      {
+       "conf": 68.18,
+       "colours": []
+      },
+      {
+       "conf": 66.03,
+       "colours": []
+      },
+      {
+       "conf": 65.12,
+       "colours": []
+      },
+      {
+       "conf": 52.62,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Dog",
+     "conf": 92.41,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 92.41,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Sheep",
+     "conf": 91.35,
+     "parents": [
+      "Animal",
+      "Livestock",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 91.35,
+       "colours": []
+      },
+      {
+       "conf": 84.75,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Cormorant",
+     "conf": 90.86,
+     "parents": [
+      "Animal",
+      "Bird",
+      "Waterfowl"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Waterfowl",
+     "conf": 90.86,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 86.48,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Water",
+     "conf": 86.17,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Kangaroo",
+     "conf": 85.77,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 85.77,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Woodland",
+     "conf": 85.68,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Elephant",
+     "conf": 77.81,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 77.81,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Person",
+     "conf": 71.04,
+     "parents": [],
+     "instances": [
+      {
+       "conf": 71.04,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Grove",
+     "conf": 57.82,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hog",
+     "conf": 57.43,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pig"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Black Bear",
+     "conf": 57.39,
+     "parents": [
+      "Animal",
+      "Bear",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vulture",
+     "conf": 57.28,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Swamp",
+     "conf": 56.77,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Water"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Eagle",
+     "conf": 56.73,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grassland",
+     "conf": 55.93,
+     "parents": [
+      "Field",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bull",
+     "conf": 55.88,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Moose",
+     "conf": 55.77,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Boar",
+     "conf": 55.7,
+     "parents": [
+      "Animal",
+      "Hog",
+      "Mammal",
+      "Pig",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "pig_boar_piglets.jpg": {
+   "time_s": 0.66,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Boar",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Hog",
+      "Mammal",
+      "Pig",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hog",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pig"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 100.0,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pig",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 99.81,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      },
+      {
+       "conf": 93.94,
+       "colours": [
+        "brown",
+        "yellow",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Wildlife",
+     "conf": 100.0,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Livestock",
+     "conf": 95.06,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sheep",
+     "conf": 95.06,
+     "parents": [
+      "Animal",
+      "Livestock",
+      "Mammal"
+     ],
+     "instances": [
+      {
+       "conf": 95.06,
+       "colours": []
+      },
+      {
+       "conf": 69.7,
+       "colours": []
+      },
+      {
+       "conf": 54.44,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Plant",
+     "conf": 54.05,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 54.05,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 53.06,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 53.06,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 53.06,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 52.32,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 52.32,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grove",
+     "conf": 52.02,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mud",
+     "conf": 51.74,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Hunting",
+     "conf": 50.62,
+     "parents": [],
+     "instances": []
+    }
+   ]
+  },
+  "toad_csiro.jpg": {
+   "time_s": 0.55,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 98.69,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 98.69,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Amphibian",
+     "conf": 97.0,
+     "parents": [
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Toad",
+     "conf": 97.0,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Reptile",
+     "conf": 96.03,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sea Life",
+     "conf": 96.03,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Turtle",
+     "conf": 96.03,
+     "parents": [
+      "Animal",
+      "Reptile",
+      "Sea Life"
+     ],
+     "instances": [
+      {
+       "conf": 96.03,
+       "colours": [
+        "green",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Frog",
+     "conf": 84.64,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "toad_group.jpg": {
+   "time_s": 0.64,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.21,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Lizard",
+     "conf": 99.21,
+     "parents": [
+      "Animal",
+      "Reptile"
+     ],
+     "instances": [
+      {
+       "conf": 99.21,
+       "colours": [
+        "grey",
+        "black",
+        "brown"
+       ]
+      },
+      {
+       "conf": 97.57,
+       "colours": [
+        "grey",
+        "black",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Reptile",
+     "conf": 99.21,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 97.94,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Amphibian",
+     "conf": 97.13,
+     "parents": [
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Toad",
+     "conf": 97.13,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Frog",
+     "conf": 87.47,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "toad_bufo.jpg": {
+   "time_s": 0.64,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.2,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 99.16,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Lizard",
+     "conf": 98.22,
+     "parents": [
+      "Animal",
+      "Reptile"
+     ],
+     "instances": [
+      {
+       "conf": 98.22,
+       "colours": [
+        "green",
+        "brown",
+        "brown"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Reptile",
+     "conf": 98.22,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Amphibian",
+     "conf": 96.14,
+     "parents": [
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Frog",
+     "conf": 95.45,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Toad",
+     "conf": 95.02,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "toad_big.jpg": {
+   "time_s": 0.63,
+   "boxes": [
+    {
+     "name": "Grass",
+     "conf": 100.0,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Car",
+     "conf": 98.04,
+     "parents": [
+      "Transportation",
+      "Vehicle"
+     ],
+     "instances": [
+      {
+       "conf": 98.04,
+       "colours": []
+      },
+      {
+       "conf": 95.84,
+       "colours": []
+      },
+      {
+       "conf": 92.6,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Nature",
+     "conf": 95.88,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 95.88,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Park",
+     "conf": 95.88,
+     "parents": [
+      "Grass",
+      "Nature",
+      "Outdoors",
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Potted Plant",
+     "conf": 94.76,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Lawn",
+     "conf": 93.35,
+     "parents": [
+      "Grass",
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Animal",
+     "conf": 90.25,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Elephant",
+     "conf": 90.25,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 90.25,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 90.25,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 90.25,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 85.2,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 84.07,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Flower",
+     "conf": 81.62,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Housing",
+     "conf": 79.52,
+     "parents": [
+      "Architecture",
+      "Building"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Person",
+     "conf": 71.39,
+     "parents": [],
+     "instances": [
+      {
+       "conf": 71.39,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Handbag",
+     "conf": 67.89,
+     "parents": [
+      "Accessories",
+      "Bag"
+     ],
+     "instances": [
+      {
+       "conf": 67.89,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "House",
+     "conf": 65.48,
+     "parents": [
+      "Architecture",
+      "Building",
+      "Housing"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Amphibian",
+     "conf": 57.91,
+     "parents": [
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Art",
+     "conf": 57.68,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sculpture",
+     "conf": 57.68,
+     "parents": [
+      "Art"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Statue",
+     "conf": 57.68,
+     "parents": [
+      "Art",
+      "Sculpture"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Frog",
+     "conf": 57.42,
+     "parents": [
+      "Amphibian",
+      "Animal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Jar",
+     "conf": 56.48,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Water",
+     "conf": 56.3,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Buffalo",
+     "conf": 55.99,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Planter",
+     "conf": 55.98,
+     "parents": [
+      "Jar",
+      "Plant",
+      "Potted Plant",
+      "Pottery",
+      "Vase"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Shelter",
+     "conf": 55.71,
+     "parents": [
+      "Architecture",
+      "Building",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Yard",
+     "conf": 55.36,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dinosaur",
+     "conf": 55.05,
+     "parents": [
+      "Animal",
+      "Reptile"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "cat_trap_feral.jpg": {
+   "time_s": 0.71,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 90.77,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 86.53,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 83.58,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Ocelot",
+     "conf": 83.55,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cat",
+     "conf": 78.45,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 78.45,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Pet",
+     "conf": 78.45,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Zoo",
+     "conf": 55.42,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Panther",
+     "conf": 54.33,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cougar",
+     "conf": 53.6,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 53.52,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Plant",
+     "conf": 53.31,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 53.31,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Lynx",
+     "conf": 52.84,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sloth",
+     "conf": 52.78,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Raccoon",
+     "conf": 52.3,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Deer",
+     "conf": 52.29,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cheetah",
+     "conf": 51.88,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Three-Toed Sloth",
+     "conf": 51.57,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Sloth",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 51.24,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Accipiter",
+     "conf": 50.62,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bird",
+     "conf": 50.62,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grove",
+     "conf": 50.5,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 50.5,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Snow Leopard",
+     "conf": 50.48,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Panther",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rainforest",
+     "conf": 50.4,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Abyssinian",
+     "conf": 50.29,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Jungle",
+     "conf": 50.13,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Den",
+     "conf": 50.11,
+     "parents": [
+      "Indoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Indoors",
+     "conf": 50.11,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Conifer",
+     "conf": 50.07,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "cat_orange.jpg": {
+   "time_s": 0.71,
+   "boxes": [
+    {
+     "name": "Road",
+     "conf": 99.96,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Gravel",
+     "conf": 99.81,
+     "parents": [
+      "Road"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 99.73,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Animal",
+     "conf": 96.8,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Cat",
+     "conf": 96.8,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 96.8,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 96.8,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 96.8,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rock",
+     "conf": 93.55,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Backyard",
+     "conf": 85.19,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Yard"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 85.19,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 85.19,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Yard",
+     "conf": 85.19,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kitten",
+     "conf": 68.0,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grass",
+     "conf": 64.66,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Slate",
+     "conf": 57.34,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Strap",
+     "conf": 57.12,
+     "parents": [
+      "Accessories"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pebble",
+     "conf": 57.04,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Rubble",
+     "conf": 56.91,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "City",
+     "conf": 56.46,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Path",
+     "conf": 56.14,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Walkway",
+     "conf": 55.28,
+     "parents": [
+      "Path"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Manx",
+     "conf": 55.04,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 54.95,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 54.52,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Angora",
+     "conf": 54.39,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Abyssinian",
+     "conf": 54.34,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Leash",
+     "conf": 54.03,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Zoo",
+     "conf": 53.81,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Park",
+     "conf": 53.37,
+     "parents": [
+      "Grass",
+      "Nature",
+      "Outdoors",
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Flagstone",
+     "conf": 53.1,
+     "parents": [
+      "Path",
+      "Walkway"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "cat_black.jpg": {
+   "time_s": 1.46,
+   "boxes": [
+    {
+     "name": "Slate",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Animal",
+     "conf": 96.46,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Cat",
+     "conf": 96.46,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 95.13,
+       "colours": [
+        "black",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 96.46,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 96.46,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Black Cat",
+     "conf": 91.33,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Plant",
+     "conf": 88.65,
+     "parents": [],
+     "instances": [
+      {
+       "conf": 88.65,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Rock",
+     "conf": 66.38,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Gravel",
+     "conf": 56.67,
+     "parents": [
+      "Road"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Road",
+     "conf": 56.67,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 55.47,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Manx",
+     "conf": 53.68,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rubble",
+     "conf": 53.02,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Bird",
+     "conf": 51.91,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Blackbird",
+     "conf": 51.91,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Angora",
+     "conf": 51.38,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 50.86,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 50.86,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Wilderness",
+     "conf": 50.86,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kitten",
+     "conf": 50.77,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Limestone",
+     "conf": 50.5,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Rodent",
+     "conf": 50.34,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "cat_dog_sleeping.jpg": {
+   "time_s": 0.69,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 91.88,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 91.88,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 91.88,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 91.88,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 91.88,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 91.88,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Chihuahua",
+     "conf": 91.22,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cat",
+     "conf": 86.12,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 86.12,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      },
+      {
+       "conf": 83.38,
+       "colours": [
+        "grey",
+        "black",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Couch",
+     "conf": 77.49,
+     "parents": [
+      "Furniture"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Furniture",
+     "conf": 77.49,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Person",
+     "conf": 57.25,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sleeping",
+     "conf": 57.25,
+     "parents": [
+      "Person"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Accessories",
+     "conf": 56.85,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Strap",
+     "conf": 56.85,
+     "parents": [
+      "Accessories"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Husky",
+     "conf": 56.21,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Siamese",
+     "conf": 54.72,
+     "parents": [
+      "Animal",
+      "Cat",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Leash",
+     "conf": 54.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Puppy",
+     "conf": 53.7,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Eskimo Dog",
+     "conf": 51.94,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Home Decor",
+     "conf": 51.78,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "German Shepherd",
+     "conf": 51.77,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Indoors",
+     "conf": 50.85,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Papillon",
+     "conf": 50.51,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Cocker Spaniel",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hound",
+     "conf": 50.49,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Armchair",
+     "conf": 50.36,
+     "parents": [
+      "Chair",
+      "Furniture"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Chair",
+     "conf": 50.36,
+     "parents": [
+      "Furniture"
+     ],
+     "instances": []
+    },
+    {
+     "name": "White Dog",
+     "conf": 50.34,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sport",
+     "conf": 50.14,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tennis",
+     "conf": 50.14,
+     "parents": [
+      "Sport"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tennis Racket",
+     "conf": 50.14,
+     "parents": [
+      "Racket",
+      "Sport",
+      "Tennis"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Purple",
+     "conf": 50.1,
+     "parents": [],
+     "instances": []
+    }
+   ]
+  },
+  "dog_labrador_bw.jpg": {
+   "time_s": 0.57,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.57,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 99.57,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 99.57,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 99.26,
+       "colours": [
+        "black",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.57,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 99.57,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Puppy",
+     "conf": 99.57,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Labrador Retriever",
+     "conf": 97.18,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hound",
+     "conf": 81.83,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Person",
+     "conf": 56.33,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sleeping",
+     "conf": 56.33,
+     "parents": [
+      "Person"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Window",
+     "conf": 55.9,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Bulldog",
+     "conf": 55.72,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pitbull",
+     "conf": 55.72,
+     "parents": [
+      "Animal",
+      "Bulldog",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pointer",
+     "conf": 54.63,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Couch",
+     "conf": 53.01,
+     "parents": [
+      "Furniture"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Furniture",
+     "conf": 53.01,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Beagle",
+     "conf": 52.77,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Hound",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Snout",
+     "conf": 52.31,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sphere",
+     "conf": 51.23,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Accessories",
+     "conf": 50.86,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Collar",
+     "conf": 50.86,
+     "parents": [
+      "Accessories"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "dog_small_brown.jpg": {
+   "time_s": 0.73,
+   "boxes": [
+    {
+     "name": "City",
+     "conf": 99.98,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Road",
+     "conf": 99.98,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Street",
+     "conf": 99.98,
+     "parents": [
+      "City",
+      "Road",
+      "Urban"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Urban",
+     "conf": 99.98,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Animal",
+     "conf": 99.46,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 99.46,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 99.46,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 99.15,
+       "colours": [
+        "grey",
+        "brown",
+        "brown"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.46,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 99.46,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Puppy",
+     "conf": 99.46,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Poodle",
+     "conf": 89.66,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Path",
+     "conf": 60.34,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Baggage",
+     "conf": 57.8,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tarmac",
+     "conf": 57.75,
+     "parents": [
+      "Road"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sidewalk",
+     "conf": 57.14,
+     "parents": [
+      "Path"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Suitcase",
+     "conf": 55.27,
+     "parents": [
+      "Baggage"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Walking",
+     "conf": 55.17,
+     "parents": [
+      "Person"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 54.61,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Alley",
+     "conf": 53.26,
+     "parents": [
+      "City",
+      "Road",
+      "Street",
+      "Urban"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Shelter",
+     "conf": 53.02,
+     "parents": [
+      "Architecture",
+      "Building",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Airport",
+     "conf": 52.61,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Accessories",
+     "conf": 52.32,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Strap",
+     "conf": 52.32,
+     "parents": [
+      "Accessories"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Leash",
+     "conf": 51.78,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Terrier",
+     "conf": 51.55,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cocker Spaniel",
+     "conf": 51.52,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sunglasses",
+     "conf": 51.28,
+     "parents": [
+      "Accessories"
+     ],
+     "instances": []
+    },
+    {
+     "name": "White Dog",
+     "conf": 51.26,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Summer",
+     "conf": 51.16,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Hound",
+     "conf": 50.7,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "dingo.jpg": {
+   "time_s": 0.74,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.14,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 99.14,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 99.14,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 99.14,
+       "colours": [
+        "grey",
+        "grey",
+        "brown"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.14,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pet",
+     "conf": 99.14,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Husky",
+     "conf": 95.71,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Red Wolf",
+     "conf": 94.36,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Wolf"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wolf",
+     "conf": 94.36,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "White Dog",
+     "conf": 57.29,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Coyote",
+     "conf": 57.23,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 57.14,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kit Fox",
+     "conf": 57.14,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 57.14,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Soil",
+     "conf": 56.9,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Zoo",
+     "conf": 56.19,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Kangaroo",
+     "conf": 55.34,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Puppy",
+     "conf": 52.56,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rock",
+     "conf": 52.52,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "German Shepherd",
+     "conf": 51.16,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Dog",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grey Fox",
+     "conf": 50.03,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "kangaroo_mob.jpg": {
+   "time_s": 0.73,
+   "boxes": [
+    {
+     "name": "Vegetation",
+     "conf": 100.0,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 100.0,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 100.0,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 100.0,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 100.0,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grass",
+     "conf": 98.82,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Park",
+     "conf": 94.79,
+     "parents": [
+      "Grass",
+      "Nature",
+      "Outdoors",
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Conifer",
+     "conf": 89.24,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fir",
+     "conf": 85.17,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Aerial View",
+     "conf": 83.23,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Person",
+     "conf": 75.15,
+     "parents": [],
+     "instances": [
+      {
+       "conf": 75.15,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Garden",
+     "conf": 57.79,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Countryside",
+     "conf": 57.27,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Farm",
+     "conf": 57.27,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rural",
+     "conf": 57.27,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grove",
+     "conf": 57.19,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Field",
+     "conf": 56.46,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Pasture",
+     "conf": 56.46,
+     "parents": [
+      "Countryside",
+      "Farm",
+      "Field",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pine",
+     "conf": 54.77,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hedge",
+     "conf": 54.75,
+     "parents": [
+      "Fence",
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bush",
+     "conf": 54.65,
+     "parents": [
+      "Plant",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Spruce",
+     "conf": 54.16,
+     "parents": [
+      "Conifer",
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Yard",
+     "conf": 54.1,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Scenery",
+     "conf": 54.03,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Lawn",
+     "conf": 53.76,
+     "parents": [
+      "Grass",
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Backyard",
+     "conf": 53.15,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Yard"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Dog",
+     "conf": 52.91,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Mammal",
+      "Pet"
+     ],
+     "instances": [
+      {
+       "conf": 52.91,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Grassland",
+     "conf": 52.56,
+     "parents": [
+      "Field",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Jungle",
+     "conf": 52.34,
+     "parents": [
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Vegetation"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "kangaroo_one.jpg": {
+   "time_s": 0.76,
+   "boxes": [
+    {
+     "name": "Field",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Grassland",
+     "conf": 100.0,
+     "parents": [
+      "Field",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 100.0,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Grass",
+     "conf": 99.99,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 99.99,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wilderness",
+     "conf": 99.97,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 99.93,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grove",
+     "conf": 99.75,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation",
+      "Woodland"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 99.75,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 99.75,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Savanna",
+     "conf": 97.73,
+     "parents": [
+      "Field",
+      "Grassland",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Countryside",
+     "conf": 95.92,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pasture",
+     "conf": 95.92,
+     "parents": [
+      "Countryside",
+      "Farm",
+      "Field",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rural",
+     "conf": 95.92,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Shelter",
+     "conf": 92.82,
+     "parents": [
+      "Architecture",
+      "Building",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Animal",
+     "conf": 92.44,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Antelope",
+     "conf": 92.44,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 92.44,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Mammal",
+     "conf": 92.44,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 92.44,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rock",
+     "conf": 91.86,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Scenery",
+     "conf": 88.96,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Car",
+     "conf": 71.83,
+     "parents": [
+      "Transportation",
+      "Vehicle"
+     ],
+     "instances": [
+      {
+       "conf": 71.83,
+       "colours": []
+      },
+      {
+       "conf": 67.47,
+       "colours": []
+      },
+      {
+       "conf": 55.75,
+       "colours": []
+      }
+     ]
+    },
+    {
+     "name": "Coyote",
+     "conf": 70.58,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Deer",
+     "conf": 64.78,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Landscape",
+     "conf": 57.22,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Meadow",
+     "conf": 57.0,
+     "parents": [
+      "Countryside",
+      "Field",
+      "Grassland",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 56.63,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fir",
+     "conf": 56.56,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Slope",
+     "conf": 56.27,
+     "parents": [],
+     "instances": []
+    }
+   ]
+  },
+  "possum.jpg": {
+   "time_s": 0.84,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 95.76,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 95.76,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Plant",
+     "conf": 94.71,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 94.71,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bear",
+     "conf": 89.43,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 89.43,
+       "colours": [
+        "brown",
+        "black",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Wildlife",
+     "conf": 89.43,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Possum",
+     "conf": 67.36,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree Trunk",
+     "conf": 55.32,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Raccoon",
+     "conf": 54.1,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Fox",
+     "conf": 52.36,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rodent",
+     "conf": 51.02,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Squirrel",
+     "conf": 50.69,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Rodent"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Canine",
+     "conf": 50.54,
+     "parents": [
+      "Animal",
+      "Mammal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Monkey",
+     "conf": 50.04,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grey Fox",
+     "conf": 50.03,
+     "parents": [
+      "Animal",
+      "Canine",
+      "Fox",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "kookaburra_toad.jpg": {
+   "time_s": 1.11,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 100.0,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Beak",
+     "conf": 100.0,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bird",
+     "conf": 100.0,
+     "parents": [
+      "Animal"
+     ],
+     "instances": [
+      {
+       "conf": 99.17,
+       "colours": [
+        "grey",
+        "grey",
+        "black"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Jay",
+     "conf": 88.68,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bee Eater",
+     "conf": 69.28,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Booby",
+     "conf": 57.37,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Finch",
+     "conf": 55.88,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Crawdad",
+     "conf": 55.79,
+     "parents": [
+      "Animal",
+      "Food",
+      "Invertebrate",
+      "Sea Life",
+      "Seafood"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Food",
+     "conf": 55.79,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Sea Life",
+     "conf": 55.79,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Seafood",
+     "conf": 55.79,
+     "parents": [
+      "Food"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wren",
+     "conf": 55.64,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hardware",
+     "conf": 54.02,
+     "parents": [
+      "Electronics"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Anthus",
+     "conf": 53.95,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Buzzard",
+     "conf": 53.53,
+     "parents": [
+      "Animal",
+      "Bird",
+      "Hawk"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hawk",
+     "conf": 53.53,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cricket Insect",
+     "conf": 53.21,
+     "parents": [
+      "Animal",
+      "Insect",
+      "Invertebrate"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Bluebird",
+     "conf": 52.43,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Accipiter",
+     "conf": 52.2,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 52.2,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Blue Jay",
+     "conf": 52.09,
+     "parents": [
+      "Animal",
+      "Bird",
+      "Bluebird",
+      "Jay"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Sparrow",
+     "conf": 52.01,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Spider",
+     "conf": 51.16,
+     "parents": [
+      "Animal",
+      "Invertebrate"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Lizard",
+     "conf": 51.01,
+     "parents": [
+      "Animal",
+      "Reptile"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Seagull",
+     "conf": 50.98,
+     "parents": [
+      "Animal",
+      "Bird",
+      "Waterfowl"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree Trunk",
+     "conf": 50.93,
+     "parents": [
+      "Plant",
+      "Tree"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodpecker",
+     "conf": 50.86,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Cormorant",
+     "conf": 50.85,
+     "parents": [
+      "Animal",
+      "Bird",
+      "Waterfowl"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Swallow",
+     "conf": 50.81,
+     "parents": [
+      "Animal",
+      "Bird"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wasp",
+     "conf": 50.69,
+     "parents": [
+      "Animal",
+      "Bee",
+      "Insect",
+      "Invertebrate"
+     ],
+     "instances": []
+    }
+   ]
+  },
+  "deer_trap.jpg": {
+   "time_s": 0.75,
+   "boxes": [
+    {
+     "name": "Animal",
+     "conf": 99.98,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Deer",
+     "conf": 99.98,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Mammal",
+     "conf": 99.98,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Wildlife",
+     "conf": 99.98,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Antelope",
+     "conf": 99.46,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": [
+      {
+       "conf": 99.46,
+       "colours": [
+        "grey",
+        "grey",
+        "grey"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Antler",
+     "conf": 97.69,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Elk",
+     "conf": 87.92,
+     "parents": [
+      "Animal",
+      "Deer",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Plant",
+     "conf": 55.57,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Vegetation",
+     "conf": 55.57,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Impala",
+     "conf": 55.5,
+     "parents": [
+      "Animal",
+      "Antelope",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Field",
+     "conf": 54.49,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Grassland",
+     "conf": 54.49,
+     "parents": [
+      "Field",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Nature",
+     "conf": 54.49,
+     "parents": [
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Outdoors",
+     "conf": 54.49,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Grass",
+     "conf": 54.43,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Countryside",
+     "conf": 54.01,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Grazing",
+     "conf": 54.01,
+     "parents": [
+      "Countryside",
+      "Field",
+      "Grassland",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Moose",
+     "conf": 53.18,
+     "parents": [
+      "Animal",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Tree",
+     "conf": 52.85,
+     "parents": [
+      "Plant"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Land",
+     "conf": 52.74,
+     "parents": [
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Woodland",
+     "conf": 52.74,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Farm",
+     "conf": 52.35,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Pasture",
+     "conf": 52.35,
+     "parents": [
+      "Countryside",
+      "Farm",
+      "Field",
+      "Nature",
+      "Outdoors",
+      "Rural"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rural",
+     "conf": 52.35,
+     "parents": [
+      "Countryside",
+      "Nature",
+      "Outdoors"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Hunting",
+     "conf": 52.24,
+     "parents": [],
+     "instances": []
+    },
+    {
+     "name": "Gazelle",
+     "conf": 51.76,
+     "parents": [
+      "Animal",
+      "Antelope",
+      "Mammal",
+      "Wildlife"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Rainforest",
+     "conf": 51.5,
+     "parents": [
+      "Land",
+      "Nature",
+      "Outdoors",
+      "Plant",
+      "Tree",
+      "Vegetation"
+     ],
+     "instances": []
+    },
+    {
+     "name": "Zoo",
+     "conf": 50.9,
+     "parents": [
+      "Animal"
+     ],
+     "instances": []
+    }
+   ]
+  }
+ },
+ "peak_mb": 99
+}

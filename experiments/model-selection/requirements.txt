@@ -1,0 +1,10 @@
+# Main experiment environment: run.py, report.py, speciesnet_rules.py, chain.py
+# CPU-only PyTorch (no CUDA, ~2 GB smaller):
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1
+torchvision==0.29.1
+megadetector==10.0.26
+open_clip_torch==3.3.0
+ultralytics==8.4.175
+boto3==1.43.111
+psutil==7.2.2

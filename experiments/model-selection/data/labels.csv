@@ -1,0 +1,28 @@
+file,expected,colours,scene,notes
+fox_trap_night.jpg,fox=1,,camera trap; night IR,
+fox_otway.jpg,fox=1,,wild; Australia,
+fox_mornington.jpg,fox=1,,wild; Australia,partly hidden behind branches
+fox_play.jpg,fox=2,,wild; distant,adult + cub; small in frame; count approximate
+rabbit_trough.jpg,rabbit=many,,B&W; huge group,100+ rabbits; score species only
+rabbit_tasmania.jpg,rabbit=1,,close-up,
+rabbit_hidden.jpg,rabbit=1,,camera trap; day,tiny and mostly hidden at bottom centre (hard)
+rabbit_csiro.jpg,rabbit=12,,group,count approximate (±2)
+pig_feral.jpg,feral pig=1,,wild; Australia,
+pig_feral_group.jpg,feral pig=17,,wild; distant group,count approximate
+pig_boar_piglets.jpg,feral pig=8,,camera trap,wild boar: 3 adults + 5 piglets
+toad_csiro.jpg,cane toad=1,,studio,
+toad_group.jpg,cane toad=2,,studio,
+toad_bufo.jpg,cane toad=1,,night flash,
+toad_big.jpg,,,town,statue of a cane toad; should NOT be tagged
+cat_trap_feral.jpg,cat=1,grey,camera trap,tabby
+cat_orange.jpg,cat=1,orange,street,pale orange
+cat_black.jpg,cat=1,black,outdoor,
+cat_dog_sleeping.jpg,cat=1;dog=1,cat orange/white; dog white/black,indoor; dim,two species in one image
+dog_labrador_bw.jpg,dog=1,,B&W photo,colour not scorable
+dog_small_brown.jpg,dog=1,brown,street,poodle
+dingo.jpg,dog=1?,,wild; Australia,dingo: edge case (dog or not?)
+kangaroo_mob.jpg,,,distant group,distractor: ~8 tiny kangaroos
+kangaroo_one.jpg,,,wild,distractor
+possum.jpg,,,tree,distractor: brushtail possum
+kookaburra_toad.jpg,cane toad=1,,close-up,bird is a distractor; small toad in its beak (hard)
+deer_trap.jpg,,,camera trap,distractor: deer

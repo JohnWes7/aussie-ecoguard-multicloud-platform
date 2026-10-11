@@ -60,7 +60,8 @@ def handler(event, context):
     if not SHA256_RE.match(sha256):
         return response(400, {"error": "sha256 must be 64 hex characters"})
 
-    ext = normalise_extension(str(body.get("filename", "")))
+    filename = str(body.get("filename", ""))
+    ext = normalise_extension(filename)
     if ext not in FILE_TYPES:
         return response(400, {"error": f"unsupported file type, allowed: {sorted(FILE_TYPES)}"})
     file_type, content_type = FILE_TYPES[ext]
@@ -82,6 +83,9 @@ def handler(event, context):
                 "expires_at": now + PENDING_TTL,
                 "file_url": key,
                 "file_type": file_type,
+                # Only for display. If the same bytes are reserved again under
+                # another name, the latest name wins.
+                "filename": filename[:255],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 # TODO(cognito): add "owner" from the JWT "sub" claim
             },

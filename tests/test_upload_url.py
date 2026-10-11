@@ -55,6 +55,7 @@ def test_new_file_writes_pending_meta_with_24h_ttl(app, table):
     assert item["status"] == "PENDING"
     assert item["file_type"] == "image"
     assert item["file_url"] == f"uploads/{SHA}"
+    assert item["filename"] == "fox.jpg"
     assert 86000 < int(item["expires_at"]) - time.time() <= 86400
 
 

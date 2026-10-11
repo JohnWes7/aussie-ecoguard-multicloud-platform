@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of the deployed stack: tagging queue trigger, CORS preflight,
 # POST /upload-url, PUT to the presigned URL, tagging (EventBridge -> SQS ->
-# Lambda -> Cloud Run -> DynamoDB), duplicate rejection and bad requests.
+# Lambda -> Cloud Run -> DynamoDB), duplicate rejection, bad requests and the website.
 # Cleans up its test file afterwards.
 # Needs AWS credentials. Usage: ./scripts/smoke_test.sh
 set -uo pipefail
@@ -110,13 +110,33 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type
   -d "{\"sha256\": \"$SHA\", \"filename\": \"smoke.jpg\"}")"
 check "POST same file after READY returns 409" "$STATUS" "409"
 
-# 7. Bad requests
+# 7. GET /files/{sha256} and GET /files show the tagged file
+FILES_API="$(output ApiUrl)/files"
+STATUS="$(curl -s -o "$WORK/file.json" -w '%{http_code}' "$FILES_API/$SHA")"
+check "GET /files/{sha256}" "$STATUS" "200"
+check "GET /files/{sha256} is READY with tags" \
+  "$(python -c "import json,sys; f = json.load(sys.stdin); print(f['status'], bool(f['tags']))" < "$WORK/file.json")" "READY True"
+check "GET /files lists the file" \
+  "$(curl -s "$FILES_API" | python -c "import json,sys; print(any(f['file_id'] == '$SHA' for f in json.load(sys.stdin)['files']))")" "True"
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$FILES_API/$(printf '0%.0s' {1..64})")"
+check "GET /files/{unknown} returns 404" "$STATUS" "404"
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$FILES_API/abc")"
+check "GET /files/{bad sha256} returns 400" "$STATUS" "400"
+
+# 8. Bad requests
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d '{"sha256": "abc", "filename": "a.jpg"}')"
 check "POST bad sha256" "$STATUS" "400"
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"a.gif\"}")"
 check "POST unsupported type" "$STATUS" "400"
+
+# 9. Website: the page is served over HTTPS and config.js points at this stack's API
+SITE="$(output WebsiteHttpsURL)"
+STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$SITE")"
+check "website index.html" "$STATUS" "200"
+check "website config.js has this stack's ApiUrl" \
+  "$(curl -s "${SITE%index.html}config.js" | grep -c "\"$(output ApiUrl)\"")" "1"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "All smoke tests passed"; else echo "$FAILURES smoke test(s) failed"; fi

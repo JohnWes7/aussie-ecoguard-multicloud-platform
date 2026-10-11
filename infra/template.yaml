@@ -277,13 +277,83 @@ Resources:
             method.response.header.Access-Control-Allow-Methods: true
             method.response.header.Access-Control-Allow-Headers: true
 
+  # ---------- REST API: GET /files and GET /files/{sha256} -> FilesFunction ----------
+
+  # Lists files with their tags, and returns one file's status for polling (lambdas/files).
+  FilesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aussie-ecoguard-files
+      Runtime: python3.12
+      Handler: app.handler
+      Code: ../lambdas/files/
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MediaTable
+          BUCKET_NAME: !Ref MediaBucket
+          PREVIEW_URL_EXPIRES: "3600"
+
+  FilesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: files
+
+  # {sha256} is a path parameter; Lambda finds it in event["pathParameters"].
+  FileResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !Ref FilesResource
+      PathPart: "{sha256}"
+
+  # A GET without custom headers is a "simple" cross-origin request, so the
+  # browser sends no preflight and these routes need no OPTIONS method yet.
+  # TODO(cognito): the Authorization header will trigger preflights; add OPTIONS then.
+  FilesGet:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref FilesResource
+      HttpMethod: GET
+      AuthorizationType: NONE # TODO(cognito)
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FilesFunction.Arn}/invocations"
+
+  FileGet:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref FileResource
+      HttpMethod: GET
+      AuthorizationType: NONE # TODO(cognito)
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FilesFunction.Arn}/invocations"
+
+  # Lets this API invoke the function for GET /files and GET /files/<anything>.
+  FilesInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FilesFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/GET/files*"
+
   # A deployment is a snapshot of the API; the stage "api" serves it at
   # https://<api-id>.execute-api.<region>.amazonaws.com/api/...
   # CloudFormation only creates this snapshot once, so deploy_aws.sh takes a new
   # one after every stack update.
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: [UploadUrlPost, UploadUrlOptions]
+    DependsOn: [UploadUrlPost, UploadUrlOptions, FilesGet, FileGet]
     Properties:
       RestApiId: !Ref Api
 
@@ -321,6 +391,9 @@ Outputs:
     Value: !Ref UploadUrlFunction
   ApiId:
     Value: !Ref Api
+  # Base URL of the REST API; the website appends /upload-url etc. to it.
+  ApiUrl:
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com/${ApiStage}"
   TaggingFunctionName:
     Value: !Ref TaggingFunction
   TaggingQueueUrl:

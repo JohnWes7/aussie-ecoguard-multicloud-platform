@@ -83,6 +83,30 @@ if [ "$(esm_state)" = "Disabled" ]; then
 fi
 echo "Tagging queue trigger: $(esm_state)"
 
+# ============================================================================
+# Website: write web/config.js for this stack and upload web/ to the website bucket
+# ============================================================================
+API_URL="$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+  --output text)"
+WEBSITE_BUCKET="$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='WebsiteBucketName'].OutputValue" \
+  --output text)"
+# config.js is git-ignored: its values differ per account. app.js reads window.CONFIG.
+echo "window.CONFIG = { apiUrl: \"$API_URL\" };" > ../web/config.js
+# --delete removes files that are no longer in web/. no-cache makes browsers
+# check for a new version on every load instead of keeping an old app.js.
+aws s3 sync ../web "s3://$WEBSITE_BUCKET" \
+  --delete \
+  --cache-control no-cache \
+  --region "$REGION" >/dev/null
+echo "Uploaded web/ to $WEBSITE_BUCKET"
+# ============================================================================
+
 aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \

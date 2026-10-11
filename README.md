@@ -14,7 +14,7 @@ The backbone is being built first: website → upload to S3 → inference → Dy
 | `POST /upload-url` (Lambda + API Gateway, deduplication by SHA-256) | Deployed, no auth yet |
 | `tagging` (EventBridge rule → SQS queue → Lambda → Cloud Run → DynamoDB) | Deployed |
 | Cloud Run inference service (stub: downloads the file, returns fake tags) | Deployed, no auth yet |
-| Web page that uploads files | Not started |
+| Web page that uploads files (`web/`) | Deployed; shows "uploaded", not the tags yet |
 
 ## Repository layout
 
@@ -28,6 +28,7 @@ lambdas/
   upload_url/app.py  POST /upload-url
   tagging/app.py     Runs inference on each new upload and saves the tags
 inference/           Cloud Run service (FastAPI + Dockerfile), currently a stub
+web/                 Static website (plain HTML + JS, no build step); config.js is generated
 tests/               Unit tests (pytest + moto, no AWS account needed)
 scripts/
   smoke_test.sh      End-to-end checks against the deployed AWS stack
@@ -78,7 +79,8 @@ The same command creates the stack the first time and updates it afterwards. It:
 4. Runs `aws cloudformation deploy` on the stack `aussie-ecoguard`. CloudFormation only changes resources whose definition changed.
 5. Publishes the REST API to the `api` stage. CloudFormation does not redeploy an API when its routes change, so the script does it every time.
 6. Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)).
-7. Prints the stack outputs, including `UploadUrlEndpoint`.
+7. Writes `web/config.js` (git-ignored) with this stack's `ApiUrl`, then uploads `web/` to the website bucket with `aws s3 sync --delete`. Files are served with `Cache-Control: no-cache`, so a reload always picks up the new version.
+8. Prints the stack outputs, including `WebsiteHttpsURL` and `UploadUrlEndpoint`.
 
 Because the template points at local Lambda folders, uploading `template.yaml` in the CloudFormation console does **not** work. Always deploy with the script. The console is still useful for watching progress: CloudFormation → `aussie-ecoguard` → **Events** shows what changed and why a deployment failed.
 
@@ -231,7 +233,21 @@ This checks the deployed stack end to end and needs valid credentials. Run it af
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the stack outputs and uses a random file. It checks that the tagging queue trigger is enabled, the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 60 seconds), that the same file then gets 409, and that bad requests return 400. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the stack outputs and uses a random file. It checks that the tagging queue trigger is enabled, the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 60 seconds), that the same file then gets 409, that bad requests return 400, and that the website is served with a `config.js` pointing at this stack's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+
+### Website
+
+Open the `WebsiteHttpsURL` output (`https://aussie-ecoguard-web-<account-id>.s3.amazonaws.com/index.html`) and choose one or more files. For each file the page computes the SHA-256, calls `POST /upload-url`, and PUTs the file to S3 with a progress bar. It then shows "Uploaded", "Already uploaded" (409) or the error. The tags are not shown yet; check them with `scripts/upload.sh` or in the DynamoDB console.
+
+Use the HTTPS address. The browser only computes SHA-256 (`crypto.subtle`) on HTTPS pages or `localhost`, so on the HTTP website endpoint the page shows a warning and disables the file picker. Files over 500 MB are refused because the browser reads the whole file into memory to hash it.
+
+To try changes to `web/` without deploying, serve the folder locally (the media bucket's CORS allows `http://localhost:8000`):
+
+```bash
+python -m http.server 8000 --directory web   # then open http://localhost:8000
+```
+
+This needs `web/config.js`. `deploy_aws.sh` writes it, or create it by hand: `window.CONFIG = { apiUrl: "<ApiUrl output>" };`.
 
 ### Upload a real file
 
@@ -298,6 +314,8 @@ gcloud artifacts repositories delete cloud-run-source-deploy --location us-east4
 | Uploads stay `PENDING`; the tagging queue has messages but nothing processes them; smoke test fails `tagging queue trigger enabled` | When a Learner Lab session ends, `LabRole` loses its SQS permissions for a while. Lambda then disables the queue trigger by itself (CloudTrail event `LambdaESMDisabled`; the mapping shows `USER_INITIATED`, which is misleading) and does not turn it back on. Run `./infra/deploy_aws.sh` to enable it. Queued messages are kept for 4 days and are processed once it is enabled |
 | A file is `FAILED` | Its `META` item has an `error` attribute with the reason, also in the `tagging` logs. Fix the cause and upload the file again (`POST /upload-url` allows it) |
 | A file stays `PROCESSING` | The `tagging` Lambda crashed or timed out on every delivery and the message is in the dead-letter queue. Check the logs, fix the cause, then SQS console → `aussie-ecoguard-tagging-dlq` → **Start DLQ redrive** to send it back; tagging continues from `PROCESSING` |
+| Website says "must be opened over HTTPS" or "config.js is missing" | Open the `WebsiteHttpsURL` output, not the `http://...s3-website...` address. For a local copy, create `web/config.js` (see [Website](#website)) |
+| Website upload fails with `Failed to fetch` or `Network error` | Usually CORS: the page's address must be one of the media bucket's allowed origins (the two website addresses or `http://localhost:8000`). The browser console (F12) shows the blocked request |
 | `deploy_aws.sh` stops with `Cannot find the Cloud Run URL` | Deploy the inference service first, log in with gcloud, or set `INFERENCE_URL=https://...` |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | First `deploy_gcp.sh` fails with `storage.objects.get` denied | Grant the Compute Engine default service account `roles/run.builder` (see [Inference service](#inference-service-gcp-cloud-run)) |

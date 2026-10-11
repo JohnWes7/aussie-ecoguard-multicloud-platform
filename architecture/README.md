@@ -13,7 +13,7 @@ AWS is the primary cloud. It hosts authentication, the REST API, storage, the da
 | AWS | Amazon S3 (static website) | Hosts the web UI |
 | AWS | Amazon Cognito | User sign-up, email verification and sign-in (Hosted UI); issues JWTs |
 | AWS | Amazon API Gateway (REST) | Public API. A Cognito authorizer rejects requests that do not carry a valid JWT |
-| AWS | AWS Lambda (API functions) | `upload-url`, `search`, `edit-tags`, `delete-files`, `chat`, `subscribe` |
+| AWS | AWS Lambda (API functions) | `upload-url`, `files`, `search`, `edit-tags`, `delete-files`, `chat`, `subscribe` |
 | AWS | Amazon S3 (media bucket) | Original files in `uploads/`, thumbnails in `thumbnails/` |
 | AWS | Amazon EventBridge | Routes each S3 "Object Created" event to the thumbnail Lambda and to the tagging queue (see §4) |
 | AWS | Amazon SQS | Queues uploads for the tagging Lambda, so at most two files are tagged at once; a dead-letter queue keeps messages that keep failing (see §4) |
@@ -188,7 +188,16 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 
 1. **Subscribe:** `POST /subscriptions` with `{"tags": ["fox", "cane toad"]}`. A small `subscribe` Lambda reads the user's email from the JWT claims and calls SNS `Subscribe` with an email endpoint and a filter policy such as `{"species": ["fox", "cane toad"]}`. SNS sends a one-time confirmation email.
 2. **Trigger:** the `notify` Lambda reads the `Media` table's DynamoDB Stream (⑩). Its trigger has an **event filter** that passes only `INSERT` records whose `sk` begins with `TAG#`. Every record that reaches `notify` therefore means "file X gained tag Y", whether from automatic tagging or a manual edit, and no before/after comparison is needed. Changes to `META` items and count updates never invoke it.
-3. **Deliver:** `notify` groups the records in each batch by `file_id` and publishes one message per file, with the message attribute `species` set to the file's new tags, plus a link to the file's page in the web app, `https://<site>/file/<sha256>`. A presigned URL is not used because it expires along with the Lambda's temporary credentials. SNS emails only the subscribers whose filter policy matches.
+3. **Deliver:** `notify` groups the records in each batch by `file_id` and publishes one message per file, with the message attribute `species` set to the file's new tags, plus a link to the file's page in the web app, `https://<site>/file/<sha256>`, which loads the file with `GET /files/{sha256}` (§5.5). A presigned URL is not used because it expires along with the Lambda's temporary credentials. SNS emails only the subscribers whose filter policy matches.
+
+### 5.5 Website support (not a Spec query)
+
+Two read-only routes, served by one `files` Lambda, exist for the web UI rather than for a Spec §4.3 query:
+
+- **`GET /files`** lists every file with its tags, newest first. The library tab shows it as a grid of cards. `PENDING` files appear only while their upload URL is still valid (15 minutes); older ones are abandoned reservations.
+- **`GET /files/{sha256}`** returns one file in any status. Tagging runs asynchronously after the upload, so the browser has no other way to learn the result. This is the usual **asynchronous request-reply** pattern: the work is accepted at once, and the client polls a status resource until it reports a final state (`READY` or `FAILED`). The library polls unfinished cards every 3 seconds. The same route serves the file page linked from notification emails (§5.4).
+
+Both return a presigned GET URL of the original as the preview until thumbnails are shown instead. The upload panel and the library share no data: after an upload the panel only fires a browser event, and the library reloads `GET /files` itself.
 
 ## 6. Data model (DynamoDB single-table design)
 
@@ -213,7 +222,7 @@ Empty cells are attributes the item simply does not have. They are not stored as
 
 | Item type | `sk` value | Attributes |
 |---|---|---|
-| File metadata | `META` | `status` (`PENDING` / `PROCESSING` / `READY` / `FAILED`, §3.1), `file_url`, `file_type` (`image` / `video`), `owner` (Cognito `sub`), `created_at` (ISO timestamp, used for "recent sightings"). Added by `tagging` when the file is `READY`: `thumb_url` (absent for videos), `attributes` (colour / breed terms, e.g. `["orange"]`), `model`, `tagged_at`. Only while `PENDING`: `expires_at` (TTL). Only when `FAILED`: `error` |
+| File metadata | `META` | `status` (`PENDING` / `PROCESSING` / `READY` / `FAILED`, §3.1), `file_url`, `file_type` (`image` / `video`), `filename` (the uploaded file's name, for display only), `owner` (Cognito `sub`), `created_at` (ISO timestamp, used for "recent sightings"). Added by `tagging` when the file is `READY`: `thumb_url` (absent for videos), `attributes` (colour / breed terms, e.g. `["orange"]`), `model`, `tagged_at`. Only while `PENDING`: `expires_at` (TTL). Only when `FAILED`: `error` |
 | Tag | `TAG#<species>`, e.g. `TAG#cane toad` | `tag` (species name), `tag_count` (number) |
 
 - **Partition key `file_id`** is the file's SHA-256 (see "Keys and URLs" in §5). It is also the deduplication key: `upload-url` reserves it with a conditional write of the `META` item (§3.1).
@@ -239,7 +248,8 @@ This is a **sparse index**: `META` items have no `tag` attribute, so DynamoDB le
 | Start tagging | `UpdateItem` `META`: `SET status = PROCESSING REMOVE expires_at`, condition `status IN (PENDING, PROCESSING)`; returns the item, including `file_type` |
 | Save a newly tagged file | `TransactWriteItems`: `Update` `META` to `READY` (condition `status = PROCESSING`) + `Put` one `TAG#` item per species |
 | Tagging failed | `UpdateItem` `META`: `SET status = FAILED, error = <reason>`, condition `status = PROCESSING` |
-| Get a file with all its tags | One `Query`: `file_id = :id`. This returns `META` and every `TAG#` item together and plays the role of the join |
+| Get a file with all its tags (`GET /files/{sha256}`) | One strongly consistent `Query`: `file_id = :id`. This returns `META` and every `TAG#` item together and plays the role of the join |
+| List all files with their tags (`GET /files`) | One paginated `Scan` of the whole table, grouped by `file_id` in the Lambda and sorted by `created_at`. Fine for a few hundred files; for more, a sparse GSI keyed on `created_at` would let it `Query` newest first, one page at a time |
 | Search by tags with minimum counts | One `Query` on `tag-count-index` per tag, intersect the `file_id`s, then `BatchGetItem` the `META` items |
 | Thumbnail URL to original | Parse `file_id` from the URL, then `GetItem` `{file_id, sk: "META"}` |
 | Add a tag | `Put` `{file_id, sk: "TAG#<tag>"}` (with a `ConditionCheck` on `META`) |

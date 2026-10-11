@@ -54,7 +54,7 @@ Learner Lab credentials expire after a few hours, so redo this every time you st
 
 Never copy the credentials into this repository or paste them in screenshots.
 
-Stopping the lab does not delete the stack. Only the credentials change.
+Stopping the lab does not delete the stack. Only the credentials change. After starting the lab again, run `./scripts/smoke_test.sh`: when a session ends, Lambda may turn off the tagging queue trigger (see [Troubleshooting](#troubleshooting)).
 
 ## Deploy
 
@@ -72,7 +72,8 @@ The same command creates the stack the first time and updates it afterwards. It:
 2. Runs `aws cloudformation package`, which zips each Lambda folder, uploads it, and writes `infra/packaged.yaml` (generated, git-ignored, do not edit) with the S3 location.
 3. Runs `aws cloudformation deploy` on the stack `aussie-ecoguard`. CloudFormation only changes resources whose definition changed.
 4. Publishes the REST API to the `api` stage. CloudFormation does not redeploy an API when its routes change, so the script does it every time.
-5. Prints the stack outputs, including `UploadUrlEndpoint`.
+5. Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)).
+6. Prints the stack outputs, including `UploadUrlEndpoint`.
 
 Because the template points at local Lambda folders, uploading `template.yaml` in the CloudFormation console does **not** work. Always deploy with the script. The console is still useful for watching progress: CloudFormation → `aussie-ecoguard` → **Events** shows what changed and why a deployment failed.
 
@@ -197,7 +198,7 @@ This checks the deployed stack end to end and needs valid credentials. Run it af
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the stack outputs and uses a random file. It checks the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, and that bad requests return 400. Afterwards it deletes its test object and DynamoDB item. It exits with 0 only if every check passes.
+It reads the endpoint from the stack outputs and uses a random file. It checks that the tagging queue trigger is enabled, the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, and that bad requests return 400. Afterwards it deletes its test object and DynamoDB item. It exits with 0 only if every check passes.
 
 ### Manual test of the inference service
 
@@ -251,6 +252,7 @@ gcloud artifacts repositories delete cloud-run-source-deploy --location us-east4
 |---|---|
 | Running `./infra/deploy_aws.sh` in PowerShell opens a "choose an app" dialog | PowerShell cannot run `.sh` files. Close the dialog without choosing "Always". Switch the VS Code terminal to **Git Bash**, or run `& "C:\Program Files\Git\bin\bash.exe" ./infra/deploy_aws.sh` |
 | `ExpiredToken` / `InvalidClientTokenId` | Learner Lab credentials expired. Copy fresh ones into `~/.aws/credentials` |
+| Uploads stay `PENDING`; the tagging queue has messages but nothing processes them; smoke test fails `tagging queue trigger enabled` | When a Learner Lab session ends, `LabRole` loses its SQS permissions for a while. Lambda then disables the queue trigger by itself (CloudTrail event `LambdaESMDisabled`; the mapping shows `USER_INITIATED`, which is misleading) and does not turn it back on. Run `./infra/deploy_aws.sh` to enable it. Queued messages are kept for 4 days and are processed once it is enabled |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | First `deploy_gcp.sh` fails with `storage.objects.get` denied | Grant the Compute Engine default service account `roles/run.builder` (see [Inference service](#inference-service-gcp-cloud-run)) |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET`, a typo, or a missing `/api` stage |

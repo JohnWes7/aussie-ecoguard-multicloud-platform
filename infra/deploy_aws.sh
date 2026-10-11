@@ -56,6 +56,33 @@ aws apigateway create-deployment \
   --region "$REGION" >/dev/null
 echo "Published API $API_ID to stage api"
 
+# If LabRole loses its SQS permissions (seen after a Learner Lab session ends),
+# Lambda turns the queue trigger off by itself and never turns it back on.
+# Uploads then stay PENDING, so turn it back on here.
+TAGGING_FUNCTION="$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='TaggingFunctionName'].OutputValue" \
+  --output text)"
+ESM_UUID="$(aws lambda list-event-source-mappings \
+  --function-name "$TAGGING_FUNCTION" \
+  --region "$REGION" \
+  --query "EventSourceMappings[0].UUID" \
+  --output text)"
+esm_state() {
+  aws lambda get-event-source-mapping --uuid "$ESM_UUID" --region "$REGION" --query State --output text
+}
+if [ "$(esm_state)" = "Disabled" ]; then
+  echo "Tagging queue trigger was disabled, enabling it"
+  aws lambda update-event-source-mapping --uuid "$ESM_UUID" --enabled --region "$REGION" >/dev/null
+  # "Enabling" usually takes a few seconds; wait so the smoke test sees "Enabled".
+  for _ in $(seq 1 24); do
+    [ "$(esm_state)" = "Enabled" ] && break
+    sleep 5
+  done
+fi
+echo "Tagging queue trigger: $(esm_state)"
+
 aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \

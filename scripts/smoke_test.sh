@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# End-to-end check of the deployed stack: CORS preflight, POST /upload-url,
-# PUT to the presigned URL, and bad requests. Cleans up its test file afterwards.
+# End-to-end check of the deployed stack: tagging queue trigger, CORS preflight,
+# POST /upload-url, PUT to the presigned URL, and bad requests.
+# Cleans up its test file afterwards.
 # Needs AWS credentials. Usage: ./scripts/smoke_test.sh
 set -uo pipefail
 export AWS_PAGER=""
@@ -37,6 +38,13 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+
+# 0. Tagging queue trigger. Lambda turns it off by itself when LabRole loses its
+#    SQS permissions (e.g. after a Learner Lab session ends); uploads then stay PENDING.
+ESM_STATE="$(aws lambda list-event-source-mappings --function-name "$(output TaggingFunctionName)" \
+  --region "$REGION" --query "EventSourceMappings[0].State" --output text)"
+check "tagging queue trigger enabled" "$ESM_STATE" "Enabled"
+[ "$ESM_STATE" = "Enabled" ] || echo "      Run ./infra/deploy_aws.sh to enable it again (see README Troubleshooting)"
 
 # 1. CORS preflight
 PREFLIGHT="$(curl -s -i -X OPTIONS "$API" -H "Origin: $ORIGIN" \

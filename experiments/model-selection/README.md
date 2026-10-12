@@ -115,6 +115,8 @@ image (or a video frame every 10 s)
 
 Model names, thresholds, the species mapping and the colour list will go in the service's `config.json`, so they can be changed without code changes (Spec §4.1).
 
+After deployment one rule was added: CLIP checks every box and overrules SpeciesNet when it is at least 0.98 sure of another species (section 8).
+
 ### Limitations and follow-ups
 
 - The test set is small and has few camera-trap images. The thresholds (0.2 / 0.3) are round numbers, not tuned, but we will re-check them on more Australian camera-trap images while building the service.
@@ -160,5 +162,28 @@ Model weights are downloaded on first use: MegaDetector and SpeciesNet into thei
 | `speciesnet_rules.py`, `chain.py` | Australia rules and the CLIP fallback, applied to saved results |
 | `report.py` | Scores everything against `labels.csv` for a given threshold, with or without smoothing |
 | `results/` | Raw outputs (`*.json`) and generated tables (`report_*.md`) |
+| `data/pet_photos.csv` | Section 8: 16 close-up pet photos (Commons title, licence, author, URL, expected species) |
+| `clip_override.py` | Section 8: SpeciesNet vs CLIP on every box, and the override at several thresholds. Runs the deployed service code |
+| `results/clip_override.txt` | Its output |
 
 Images: Wikimedia Commons contributors. Per-image credits and licences are in `data/sources.csv`.
+
+## 8. Follow-up: close-up pet photos and the CLIP override (2026-10-13)
+
+After deployment, a studio photo of a pet rabbit uploaded through the website was tagged `cat`. SpeciesNet said "domestic cat" at 0.86 (rabbit family 0.008), above the threshold, so CLIP was never asked; CLIP on the same box said `rabbit` at 0.998. SpeciesNet is trained on camera-trap images, and close-up pet photos are outside what it has seen.
+
+To check whether this was a one-off, we added 16 close-up pet photos from Commons (`data/pet_photos.csv`: 8 rabbits of different breeds and colours, 3 cats, 3 dogs, 2 foxes) and compared SpeciesNet and CLIP on every box (`clip_override.py`, output in `results/clip_override.txt`):
+
+- It was not a one-off: SpeciesNet called 5 of the 8 pet rabbits `cat` (0.35–0.93) or `goat` (0.75), while CLIP said `rabbit` at 0.99 or more. Cats, dogs and foxes were all right.
+- CLIP is not always better: on the 27 test images, most boxes where the two disagree are CLIP mistakes, and some are confident. Tiny distant pigs are `cattle` at 0.96.
+
+Rule tested: if SpeciesNet and CLIP both name a species, they differ, and CLIP is at least T sure, use CLIP's tag.
+
+| T | Test images (26 scored) | Pet photos (16) |
+|---|---|---|
+| off | species 23/26, count error 15 | 11/16 |
+| 0.97, 0.98, 0.99 | unchanged | 15/16 |
+| 0.95, 0.9 | the pig group breaks (count error 24) | 15/16 |
+
+We deployed T = 0.98 (model version v2, `clip_override_threshold` in `config.json`): it sits between CLIP's most confident mistake on the test images (0.96) and the pet rabbits (0.99+). The remaining error is an old sepia photo of a French Lop (still `cat`; CLIP is unsure, `rodent` 0.36). The threshold rests on few images. Checking every box with CLIP costs about 0.1 s per box.
+

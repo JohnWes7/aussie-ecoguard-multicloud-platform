@@ -51,10 +51,12 @@ Status: **Done** · **In progress** · **Reserved** (core or integration work, Y
 | GCP inference service | Cloud Run service (FastAPI, stub model), deploy script, moved to `us-east4` | Yijiang Luo | 2026-10-10 – 11 | `58ac326` `67269bd` `43e32f0` |
 | Tagging pipeline | S3 → EventBridge → SQS (+ dead-letter queue) → `tagging` Lambda → Cloud Run → DynamoDB, with retries and `FAILED` status; fix for Learner Lab disabling the queue trigger | Yijiang Luo | 2026-10-11 | `d525170` `5c96048` `7bfdd84` `30afced` `2b798f2` |
 | Website | Static site on S3: upload panel (browser SHA-256, progress bar) | Yijiang Luo | 2026-10-11 | `6d91aa1` |
-| Files API + library | `GET /files`, `GET /files/{sha256}`; Bootstrap library tab with status polling | Yijiang Luo | 2026-10-11 | `26edb83` `46ea80b` `2a06ce1` `850a9f4` |
-| Model selection | Hand-labelled test set of 27 images, comparison of 10 pipelines (MegaDetector, SpeciesNet, CLIP, YOLOv8, Rekognition), chosen chained pipeline | Yijiang Luo | 2026-10-11 | `f59e58d` |
-| Testing | Unit tests (pytest + moto, 78 tests), end-to-end `scripts/smoke_test.sh`, `scripts/upload.sh` | Yijiang Luo | 2026-10-10 – 11 | in the commits above |
-| Documentation | `README.md` (deploy, API, testing, troubleshooting), `architecture/README.md` | Yijiang Luo | 2026-10-07 – 11 | in the commits above |
+| Files API + library | `GET /files`, `GET /files/{sha256}`; Bootstrap library tab with status polling; cards show "Uploading" / "Queued for tagging" with a preview once the file is in S3 | Yijiang Luo | 2026-10-11 – 12 | `26edb83` `46ea80b` `2a06ce1` `850a9f4` `7c3c47d` |
+| Model selection | Hand-labelled test set of 27 images, comparison of 10 pipelines (MegaDetector, SpeciesNet, CLIP, YOLOv8, Rekognition), chosen chained pipeline; follow-up with 16 pet photos that led to the CLIP override (`experiments/model-selection/` § 8) | Yijiang Luo | 2026-10-11 – 13 | `f59e58d`, § 8 in the commit after `8e03fe8` |
+| Real model (B4) | Cloud Run runs MegaDetector → SpeciesNet → CLIP (22 species + `other animal`, colours of cats and dogs). Model versions are folders in Cloud Storage, downloaded at startup, so the model changes with one environment variable (`infra/upload_model.sh`). 4 CPU / 8 GiB, timeouts measured on Cloud Run. Model v2 adds the CLIP override for close-up pet photos | Yijiang Luo | 2026-10-11 – 13 | `862ec24` `1926f68` `02e2a30` `62bd294` `6919ee4` `9db1252` `5a7716a` `ddf4d1b` `6762a86` `f4f3777` |
+| Videos (B5, B6) | One frame every 10 s through the image pipeline, highest count per species, at most 3 minutes (longer → `FAILED`); H.264 / HEVC, portrait phone videos turned upright. Test videos with sources and expected results (`experiments/test-media/`) | Yijiang Luo | 2026-10-13 | `8e03fe8`, test media in the commit after it |
+| Testing | Unit tests (pytest + moto, 149 tests), end-to-end `scripts/smoke_test.sh` (uploads a real photo, `tests/fixtures/`), `scripts/upload.sh` | Yijiang Luo | 2026-10-10 – 13 | in the commits above, `7783799` |
+| Documentation | `README.md` (deploy, API, testing, troubleshooting, model limits), `architecture/README.md` (§ 7 rewritten for the deployed model) | Yijiang Luo | 2026-10-07 – 13 | in the commits above, `95ea384` |
 
 ---
 
@@ -80,9 +82,9 @@ Each table covers one area of the spec. **Done when** is what the merge request 
 | B1 | `thumbnail` Lambda: skip non-images by `Content-Type`, scale the longest side to 256 px keeping the aspect ratio, save JPEG quality 70 to `thumbnails/<sha256>.jpg` (architecture § 5.2) | `lambdas/thumbnail/app.py`, `tests/test_thumbnail.py` (new) | ★★ | — | Open | `pytest tests/test_thumbnail.py` passes: image → thumbnail with the right size; video → skipped |
 | B2 | Deploy the thumbnail Lambda: image library packaging, EventBridge rule, template | `infra/` | ★★★ | Yijiang Luo | Blocked (B1) | Uploading an image creates its thumbnail |
 | B3 | Library cards show the thumbnail instead of the original, falling back to the original if it is missing | `web/library.js` | ★ | — | Blocked (B2) | Screenshot; network tab shows the small file |
-| B4 | Real model in Cloud Run: MegaDetector → SpeciesNet → CLIP, config in Cloud Storage so the model can change without code changes | `inference/` | ★★★ | Yijiang Luo | In progress | Test images get correct species and counts |
-| B5 | Videos: one frame every 10 seconds | `inference/` | ★★★ | Yijiang Luo | Reserved | A test video gets the highest count per species |
-| B6 | Find test videos with animals (at least 30 s, free licence) and record their source and licence in a CSV | `experiments/test-media/` (new) | ★ | — | Open | 3+ videos listed with source, licence and the animals in them |
+| B4 | Real model in Cloud Run: MegaDetector → SpeciesNet → CLIP, config in Cloud Storage so the model can change without code changes | `inference/` | ★★★ | Yijiang Luo | Done | Test images get correct species and counts |
+| B5 | Videos: one frame every 10 seconds | `inference/` | ★★★ | Yijiang Luo | Done | A test video gets the highest count per species |
+| B6 | Find test videos with animals (at least 30 s, free licence) and record their source and licence in a CSV | `experiments/test-media/` (new) | ★ | Yijiang Luo | Done | 3+ videos listed with source, licence and the animals in them |
 
 ### C. Query and edit APIs (Spec §4.3)
 
@@ -93,7 +95,7 @@ Each table covers one area of the spec. **Done when** is what the merge request 
 | C3 | `GET /search/original?thumb_url=` (thumbnail URL → original URL) | `lambdas/search/` | ★★ | — | Open | Unit tests: valid URL, bad URL → 400, unknown file → 404 |
 | C4 | `edit-tags` Lambda: `POST /tags` add (`operation: 1`) or remove (`operation: 0`) tags on many files (architecture § 5.3) | `lambdas/edit_tags/app.py`, `tests/test_edit_tags.py` (new) | ★★ | — | Open | Unit tests: add, remove, remove a missing tag is ignored, unknown file rejected |
 | C5 | `delete-files` Lambda: `POST /delete` removes the original, the thumbnail and every DynamoDB item of each file | `lambdas/delete_files/app.py`, `tests/test_delete_files.py` (new) | ★★ | — | Open | Unit tests: S3 objects and all items gone; unknown file does not crash |
-| C6 | Cloud Run `POST /detect`: run the model on an uploaded file in memory, never store it (search by file, lost pet by photo) | `inference/` | ★★★ | Yijiang Luo | Blocked (B4) | File is not in S3, GCS or DynamoDB afterwards |
+| C6 | Cloud Run `POST /detect`: run the model on an uploaded file in memory, never store it (search by file, lost pet by photo) | `inference/` | ★★★ | Yijiang Luo | Reserved | File is not in S3, GCS or DynamoDB afterwards |
 | C7 | Add C3–C5 to the template and the smoke test | `infra/`, `scripts/` | ★★ | Yijiang Luo | Blocked (C3–C5) | Smoke test passes |
 
 ### D. Website (Spec §5)
@@ -164,4 +166,5 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-13 | Yijiang Luo | B4 (real model), B5 (videos) and B6 (test videos) done; C6 unblocked |
 | 2026-10-11 | Yijiang Luo | Created this file with the work done so far and the open tasks |

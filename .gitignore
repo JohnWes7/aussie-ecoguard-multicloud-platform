@@ -38,6 +38,8 @@ web/config.js
 
 # Model-selection experiment: downloaded images, extra venv, model weights
 experiments/model-selection/data/images/
+experiments/model-selection/data/pet_photos/
+experiments/test-media/videos/
 .venv-speciesnet/
 experiments/model-selection/weights/
 

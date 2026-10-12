@@ -60,6 +60,7 @@ tests/               Unit tests (pytest + moto, no AWS account needed)
   fixtures/          Test image used by the smoke test
 experiments/
   model-selection/   How the inference models were chosen: report, scripts, labels, results
+  test-media/        Test videos: sources, scripts to download and re-encode them, expected results
 scripts/
   smoke_test.sh      End-to-end checks against the deployed AWS stack
   upload.sh          Uploads one file through the real flow and prints its tags

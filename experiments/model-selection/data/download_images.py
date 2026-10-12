@@ -1,22 +1,23 @@
 """Download the test images listed in sources.csv from Wikimedia Commons.
 
-Usage: python data/download_images.py
+Usage: python data/download_images.py                              # sources.csv -> data/images/
+       python data/download_images.py pet_photos.csv pet_photos   # the 16 pet photos (section 8)
 
 The images are not committed to the repo (11 MB, mostly CC BY-SA). Each one is
 fetched as Commons' 1280 px wide rendition (or the original if it is smaller),
-the same files the experiment was run on, and saved to data/images/<file>.
+the same files the experiment was run on, and saved to data/<folder>/<file>.
 Files that already exist are skipped.
 """
 
 import csv
 import json
 import os
+import sys
 import time
 import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "images")
 # Wikimedia asks API clients for a descriptive User-Agent with a contact URL.
 UA = "fit3184-a2-model-selection/1.0 (https://git.infotech.monash.edu/fit3184-a2/fit3184-a2)"
 
@@ -26,9 +27,10 @@ def fetch(url):
     return urllib.request.urlopen(req, timeout=60).read()
 
 
-def main():
+def main(sources="sources.csv", folder="images"):
+    OUT = os.path.join(HERE, folder)
     os.makedirs(OUT, exist_ok=True)
-    rows = list(csv.DictReader(open(os.path.join(HERE, "sources.csv"), encoding="utf-8")))
+    rows = list(csv.DictReader(open(os.path.join(HERE, sources), encoding="utf-8")))
     for row in rows:
         path = os.path.join(OUT, row["file"])
         if os.path.exists(path):
@@ -46,4 +48,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(*sys.argv[1:3])

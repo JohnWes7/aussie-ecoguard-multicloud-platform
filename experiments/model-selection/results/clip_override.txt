@@ -1,0 +1,61 @@
+Boxes where SpeciesNet names a species and CLIP disagrees:
+  rabbit_trough.jpg              box0  expected rabbit=many      SN rabbit 0.88 | CLIP deer 0.45
+  rabbit_csiro.jpg               box3  expected rabbit=12        SN rabbit 0.74 | CLIP kangaroo 0.73
+  rabbit_csiro.jpg               box4  expected rabbit=12        SN rabbit 0.72 | CLIP kangaroo 0.43
+  rabbit_csiro.jpg               box6  expected rabbit=12        SN rabbit 0.51 | CLIP kangaroo 0.79
+  rabbit_csiro.jpg               box7  expected rabbit=12        SN rabbit 0.61 | CLIP kangaroo 0.37
+  rabbit_csiro.jpg               box8  expected rabbit=12        SN rabbit 0.90 | CLIP bandicoot 0.33
+  rabbit_csiro.jpg               box10 expected rabbit=12        SN rabbit 0.49 | CLIP rodent 0.14
+  rabbit_csiro.jpg               box11 expected rabbit=12        SN rabbit 0.85 | CLIP kangaroo 0.43
+  pig_feral_group.jpg            box0  expected feral pig=17     SN feral pig 0.94 | CLIP cattle 0.73
+  pig_feral_group.jpg            box1  expected feral pig=17     SN feral pig 0.72 | CLIP cattle 0.96
+  pig_feral_group.jpg            box5  expected feral pig=17     SN feral pig 0.53 | CLIP cattle 0.96
+  pig_feral_group.jpg            box6  expected feral pig=17     SN cattle 0.59 | CLIP dog 0.26
+  pig_feral_group.jpg            box7  expected feral pig=17     SN feral pig 0.79 | CLIP cattle 0.88
+  pig_feral_group.jpg            box10 expected feral pig=17     SN cattle 0.52 | CLIP dog 0.13
+  pig_feral_group.jpg            box15 expected feral pig=17     SN cattle 0.34 | CLIP dog 0.25
+  pig_boar_piglets.jpg           box1  expected feral pig=8      SN feral pig 1.00 | CLIP goat 0.56
+  pig_boar_piglets.jpg           box2  expected feral pig=8      SN feral pig 0.96 | CLIP goat 0.86
+  toad_group.jpg                 box1  expected cane toad=2      SN cat 0.32 | CLIP cane toad 0.83
+  cat_dog_sleeping.jpg           box1  expected cat=1;dog=1      SN dog 0.97 | CLIP possum 0.55
+  kangaroo_one.jpg               box0  expected                  SN kangaroo 0.37 | CLIP deer 0.90
+  rabbit_minilop_standing.jpg    box0  expected rabbit=many      SN goat 0.75 | CLIP rabbit 1.00
+  rabbit_french_lop.jpg          box0  expected rabbit=many      SN cat 0.80 | CLIP rodent 0.36
+  rabbit_black_dwarf.jpg         box0  expected rabbit=many      SN cat 0.93 | CLIP rabbit 0.99
+  rabbit_lionhead.jpg            box0  expected rabbit=many      SN cat 0.35 | CLIP rabbit 1.00
+  rabbit_white_lionhead.jpg      box0  expected rabbit=many      SN cat 0.46 | CLIP rabbit 1.00
+  fox_arabian_3.jpg              box0  expected fox=many         SN fox 0.65 | CLIP kangaroo 0.88
+
+CLIP override >= None: test species 23/26, count right 16/21, count error 15 | pets species 11/16
+
+CLIP override >= 0.99: test species 23/26, count right 16/21, count error 15 | pets species 15/16
+   changed: rabbit_minilop_standing.jpg: {'goat': 1} -> {'rabbit': 1}
+   changed: rabbit_black_dwarf.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_white_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+
+CLIP override >= 0.98: test species 23/26, count right 16/21, count error 15 | pets species 15/16
+   changed: rabbit_minilop_standing.jpg: {'goat': 1} -> {'rabbit': 1}
+   changed: rabbit_black_dwarf.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_white_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+
+CLIP override >= 0.97: test species 23/26, count right 16/21, count error 15 | pets species 15/16
+   changed: rabbit_minilop_standing.jpg: {'goat': 1} -> {'rabbit': 1}
+   changed: rabbit_black_dwarf.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_white_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+
+CLIP override >= 0.95: test species 23/26, count right 16/21, count error 24 | pets species 15/16
+   changed: pig_feral_group.jpg: {'feral pig': 11, 'cattle': 4} -> {'feral pig': 2, 'cattle': 13}
+   changed: rabbit_minilop_standing.jpg: {'goat': 1} -> {'rabbit': 1}
+   changed: rabbit_black_dwarf.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_white_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+
+CLIP override >= 0.9: test species 23/26, count right 16/21, count error 24 | pets species 15/16
+   changed: pig_feral_group.jpg: {'feral pig': 11, 'cattle': 4} -> {'feral pig': 2, 'cattle': 13}
+   changed: rabbit_minilop_standing.jpg: {'goat': 1} -> {'rabbit': 1}
+   changed: rabbit_black_dwarf.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}
+   changed: rabbit_white_lionhead.jpg: {'cat': 1} -> {'rabbit': 1}

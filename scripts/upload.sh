@@ -66,8 +66,9 @@ if [ "$STATUS" != "200" ]; then
 fi
 echo "Uploaded, waiting for tagging..."
 
-# 3. Wait until tagging moves META to READY or FAILED
-for _ in $(seq 1 45); do
+# 3. Wait until tagging moves META to READY or FAILED. Up to 3 minutes: a cold
+#    Cloud Run start takes about a minute before inference begins.
+for _ in $(seq 1 90); do
   STATE="$(aws dynamodb get-item --table-name "$TABLE" --region "$REGION" \
     --key "{\"file_id\":{\"S\":\"$SHA\"},\"sk\":{\"S\":\"META\"}}" \
     --query "Item.status.S" --output text)"
@@ -77,6 +78,6 @@ done
 echo "Status: $STATE"
 show_items
 [ "$STATE" = "READY" ] || [ "$STATE" = "FAILED" ] || {
-  echo "Still $STATE after 90 s. See README Troubleshooting." >&2
+  echo "Still $STATE after 180 s. See README Troubleshooting." >&2
   exit 1
 }

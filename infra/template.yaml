@@ -154,10 +154,10 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: aussie-ecoguard-tagging
-      # AWS recommends at least 6x the function timeout (75 s), leaving room
+      # AWS recommends at least 6x the function timeout (135 s), leaving room
       # for Lambda to retry if it is throttled. A failed attempt also becomes
       # visible again after this long, so it is the delay between retries.
-      VisibilityTimeout: 450
+      VisibilityTimeout: 810
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt TaggingDeadLetterQueue.Arn
         # AWS recommends at least 5. The function gives up and writes FAILED
@@ -202,14 +202,14 @@ Resources:
       Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
       MemorySize: 128
       # One Cloud Run call (INFER_TIMEOUT) plus time for DynamoDB and S3.
-      Timeout: 75
+      Timeout: 135
       Environment:
         Variables:
           TABLE_NAME: !Ref MediaTable
           BUCKET_NAME: !Ref MediaBucket
           INFERENCE_URL: !Ref InferenceUrl
           MAX_ATTEMPTS: "3" # must stay below the queue's maxReceiveCount
-          INFER_TIMEOUT: "60" # same as the Cloud Run request timeout
+          INFER_TIMEOUT: "120" # = Cloud Run --timeout; a cold start (~1 min) plus inference fits
 
   # Lambda polls the queue and invokes the function with one message at a time.
   TaggingEventSource:

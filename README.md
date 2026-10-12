@@ -191,7 +191,7 @@ The queue limits tagging to 2 files at a time, the same as Cloud Run's instance 
 | Cloud Run result | What happens |
 |---|---|
 | 200 | `READY` |
-| Network error, timeout, 429 or 5xx | The Lambda fails and SQS delivers the message again after 7.5 minutes (the queue's visibility timeout). On the 3rd attempt the file becomes `FAILED` |
+| Network error, timeout, 429 or 5xx | The Lambda fails and SQS delivers the message again after 13.5 minutes (the queue's visibility timeout). On the 3rd attempt the file becomes `FAILED` |
 | Other 4xx, or a result in the wrong format | `FAILED` at once; trying again would give the same answer |
 
 `FAILED` items have an `error` attribute with the reason, and the file can be uploaded again. If the Lambda itself crashes or times out on every delivery (5 in total), the message moves to the dead-letter queue and the file stays `PROCESSING` (see [Troubleshooting](#troubleshooting)).

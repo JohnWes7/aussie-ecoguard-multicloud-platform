@@ -35,12 +35,16 @@ echo "Deploying $SERVICE to project $PROJECT ($REGION), model $MODEL_VERSION"
 # --clear-volumes/--clear-volume-mounts remove that mount from older revisions;
 # they change nothing when there is none.
 # Resources: the models need about 3 GB at peak, plus ~1.1 GB while the
-# downloaded files sit in /tmp (memory on Cloud Run), so 8Gi (needs 2 CPUs).
+# downloaded files sit in /tmp (memory on Cloud Run), so 8Gi.
+# 4 CPUs: inference takes half as long as with 2 (fox photo ~4 s instead of
+# ~7.5 s), and as memory is billed per second too, an image costs slightly less.
 # --concurrency 1: one inference at a time per instance; a second request would
-# only compete for the same CPUs. OMP_NUM_THREADS=2 makes torch use the 2 CPUs
+# only compete for the same CPUs. OMP_NUM_THREADS=4 makes torch use the 4 CPUs
 # it has rather than the host's core count. --cpu-boost gives extra CPU while
 # the instance starts and loads the models.
-# --timeout 300 for now, while cold start and inference times are measured (7c).
+# --timeout 120: a cold start (~1 min: download + load the models) plus the
+# slowest image measured (~12 s, 17 animals). The tagging Lambda waits the same
+# time (INFER_TIMEOUT in infra/template.yaml).
 gcloud run deploy "$SERVICE" \
   --source inference \
   --project "$PROJECT" \
@@ -51,12 +55,12 @@ gcloud run deploy "$SERVICE" \
   --execution-environment gen2 \
   --clear-volumes \
   --clear-volume-mounts \
-  --set-env-vars "MODEL_GCS=gs://$MODEL_BUCKET/$MODEL_VERSION,OMP_NUM_THREADS=2" \
+  --set-env-vars "MODEL_GCS=gs://$MODEL_BUCKET/$MODEL_VERSION,OMP_NUM_THREADS=4" \
   --memory 8Gi \
-  --cpu 2 \
+  --cpu 4 \
   --concurrency 1 \
   --cpu-boost \
-  --timeout 300 \
+  --timeout 120 \
   --quiet
 
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format 'value(status.url)')"

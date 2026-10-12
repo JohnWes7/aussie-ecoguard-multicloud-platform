@@ -106,7 +106,7 @@ An SNS topic fan-out (S3 → SNS → two Lambdas) would also work. EventBridge w
 - **Nothing is lost while the function cannot run.** Messages stay in the queue for up to 4 days, for example while Lambda has turned the queue trigger off after a Learner Lab session ended. Capping a directly invoked function with reserved concurrency would also limit the load, but Lambda keeps throttled asynchronous events for at most 6 hours, and retries a failed invocation only twice.
 - **Retries without waiting inside Lambda.** When Cloud Run has a temporary problem, `tagging` raises an error and SQS delivers the message again after the visibility timeout. The function does not sleep between attempts, so no Lambda time is billed while waiting.
 - **Dead-letter queue.** A message that keeps crashing the function moves to `aussie-ecoguard-tagging-dlq` and is kept for 14 days. After a fix it can be sent back with one click ("Start DLQ redrive").
-- **Settings follow the AWS guidance for SQS event sources:** a visibility timeout of six times the function timeout (810 s for 135 s) and a `maxReceiveCount` of 5. The function timeout covers one Cloud Run call of up to 120 s: a cold start (about a minute to download and load the models) plus inference. `tagging` itself gives up and writes `FAILED` on the 3rd attempt (§3.1), so the 4th and 5th deliveries are only a margin for crashes.
+- **Settings follow the AWS guidance for SQS event sources:** a visibility timeout of six times the function timeout (1890 s for 315 s) and a `maxReceiveCount` of 5. The function timeout covers one Cloud Run call of up to 300 s: a cold start (about a minute to download and load the models) plus the longest video accepted (3 minutes, 18 frames). `tagging` itself gives up and writes `FAILED` on the 3rd attempt (§3.1), so the 4th and 5th deliveries are only a margin for crashes.
 
 ## 5. Core features (Spec §4), requirement by requirement
 
@@ -132,7 +132,7 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 | Deduplication by checksum | The browser sends the SHA-256 first; `upload-url` reserves it with a conditional write of a `PENDING` `META` item and returns `409` if the file is already `PROCESSING` or `READY` (§3.1). The presigned PUT is bound to that checksum so the content cannot be swapped, and because the key is `uploads/<sha256>` the same content is never stored twice | ③ |
 | Thumbnail generation | Keys have no extension, so the `thumbnail` Lambda checks the object's `Content-Type` and skips anything that is not an image. It uses OpenCV to scale the longest side to 256 px, keeping the aspect ratio, saves a JPEG at quality 70 to `thumbnails/<sha256>.jpg`, and has `s3:GetObject` on `uploads/*` and `s3:PutObject` on `thumbnails/*` | ⑤ |
 | Tag the file and save type, tags, file URL and thumbnail URL | `tagging` sends a presigned GET URL to Cloud Run and writes the result to `Media` (the `META` item becomes `READY`, plus one `TAG#` item per species). Because thumbnail keys are deterministic, `tagging` can store `thumb_url` without waiting for the `thumbnail` Lambda | ⑥ ⑦ ⑧ ⑨ |
-| Videos: **one frame every 10 seconds** | For a video, Cloud Run opens the presigned URL with OpenCV, seeks in 10-second steps (`CAP_PROP_POS_MSEC`), runs detection on each sampled frame, and keeps the highest count per species across frames | ⑦ |
+| Videos: **one frame every 10 seconds** | For a video, Cloud Run downloads the file to `/tmp` (the presigned URL could expire during a long read), opens it with OpenCV, seeks in 10-second steps (`CAP_PROP_POS_MSEC`), runs detection on each sampled frame, and keeps the highest count per species across frames. Phone videos filmed in portrait are turned upright from their rotation metadata. Videos longer than 3 minutes (18 frames) are refused, so a cold start plus the longest video fits Cloud Run's 300 s timeout | ⑦ |
 
 ### 5.3 Queries (Spec §4.3)
 
@@ -305,7 +305,7 @@ image
 - **CLIP overrules SpeciesNet** only when both name a species, they differ, and CLIP is at least 0.98 sure (`clip_override_threshold`). SpeciesNet is trained on camera-trap images and called 6 of 9 close-up pet rabbits `cat` or `goat` (scores up to 0.93), while CLIP, trained on web photos, said `rabbit` at 0.99 or more. CLIP is confidently wrong too, on tiny distant animals: its highest wrong score on the test images was 0.96 (pigs called cattle). With 0.98, 5 of the 6 rabbits are fixed and none of the 27 test images changes; with 0.95 the pig group breaks. Checking every box costs about 0.1 s per box.
 - **Colour** is only given for cats and dogs. `attributes` belongs to the file, not to one animal, so the colour of other animals would make "orange cat" match a photo of an orange fox and a grey cat.
 
-**Known limits** (also in the [repository README](../README.md)): only 26 scored test images; very small distant animals are sometimes called the wrong species (17 pigs → 11 pigs + 4 cattle); the 0.98 override threshold rests on few images, and an old sepia photo of a rabbit is still tagged `cat`; videos are not supported yet (§5.2).
+**Known limits** (also in the [repository README](../README.md)): only 26 scored test images; very small distant animals are sometimes called the wrong species (17 pigs → 11 pigs + 4 cattle); the 0.98 override threshold rests on few images, and an old sepia photo of a rabbit is still tagged `cat`; in videos a mistake in a single frame stays in the result, because each species keeps its highest count over the frames (§5.2).
 
 ### 7.3 Running it on Cloud Run
 
@@ -314,7 +314,7 @@ image
 | Resources | 4 vCPU, 8 GiB | The models need about 3 GB at peak, plus 1.1 GB while the downloaded files are in `/tmp` (memory on Cloud Run). With 4 CPUs inference takes half as long as with 2, so an image costs slightly less |
 | Concurrency | 1 request per instance | A second request would only compete for the same CPUs |
 | Instances | 0 to 2 | Scales to zero when idle; 2 matches the SQS `MaximumConcurrency` (§4) |
-| Request timeout | 120 s | A cold start plus the slowest image measured |
+| Request timeout | 300 s | A cold start plus the longest video accepted (3 minutes = 18 frames) |
 
 Measured: 4–12 s per image (12 s for 17 animals); a new instance needs about a minute before it answers (download about 17 s, then loading). So the first upload after about 15 idle minutes waits about a minute.
 

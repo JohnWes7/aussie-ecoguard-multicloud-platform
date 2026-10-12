@@ -6,7 +6,7 @@ The full design is in [architecture/README.md](architecture/README.md). This REA
 
 ## Current status
 
-The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. Cognito, thumbnails, videos and the query APIs come next.
+The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. Cognito, thumbnails and the query APIs come next.
 
 | Part | Status |
 |---|---|
@@ -16,7 +16,7 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | Cloud Run inference service: MegaDetector → SpeciesNet → CLIP (see [Model selection](#model-selection)), images only | Deployed, no auth yet |
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, no auth yet |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
-| Videos (one frame every 10 seconds) | Not built yet; videos are marked `FAILED` |
+| Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
 
 ## Model selection
 
@@ -32,7 +32,7 @@ Known limits of the deployed model:
 - Cane toads are SpeciesNet's weak spot and depend on the CLIP fallback; a toad held in a bird's beak is not found.
 - The mapping rules group by family or genus: every felid is `cat`, every *Canis* (dingo included) is `dog`. Animals with no rule, such as quolls, become `other animal`.
 - Colour is only given for cats and dogs, and was checked on just 6 images.
-- Videos are not supported yet (they become `FAILED`).
+- Videos: each species keeps its highest count in any checked frame, so a mistake in a single frame stays in the result (a cat video gained `cattle` from one dark frame). Videos longer than 3 minutes are refused (`FAILED`).
 
 ## Repository layout
 
@@ -156,7 +156,7 @@ MODEL_VERSION=v1 ./infra/deploy_gcp.sh
 
 `gcloud run deploy --source inference` uploads the folder and Cloud Build builds the image from `inference/Dockerfile`, so Docker is not needed locally (a build takes 5–10 minutes). The script prints the service URL at the end. The service is `aussie-ecoguard-inference` in `us-east4`, next to AWS `us-east-1`. It has 4 CPUs and 8 GiB, handles one image at a time per instance, scales to zero when idle and is capped at 2 instances.
 
-A new instance needs about a minute before it answers (download ~17 s, then loading the models), so the first upload after about 15 idle minutes takes about a minute; after that, inference takes 4–12 s per image. The `tagging` Lambda waits up to 120 s for an answer.
+A new instance needs about a minute before it answers (download ~17 s, then loading the models), so the first upload after about 15 idle minutes takes about a minute; after that, inference takes 4–15 s per image and a few seconds per checked video frame. The `tagging` Lambda waits up to 300 s for an answer (a cold start plus a 3-minute video).
 
 **Changing the model** needs no code change and no new image. Every revision keeps the version it started with, so a version is never edited in place:
 
@@ -232,7 +232,7 @@ The queue limits tagging to 2 files at a time, the same as Cloud Run's instance 
 | Cloud Run result | What happens |
 |---|---|
 | 200 | `READY` |
-| Network error, timeout, 429 or 5xx | The Lambda fails and SQS delivers the message again after 13.5 minutes (the queue's visibility timeout). On the 3rd attempt the file becomes `FAILED` |
+| Network error, timeout, 429 or 5xx | The Lambda fails and SQS delivers the message again after 31.5 minutes (the queue's visibility timeout). On the 3rd attempt the file becomes `FAILED` |
 | Other 4xx, or a result in the wrong format | `FAILED` at once; trying again would give the same answer |
 
 `FAILED` items have an `error` attribute with the reason, and the file can be uploaded again. If the Lambda itself crashes or times out on every delivery (5 in total), the message moves to the dead-letter queue and the file stays `PROCESSING` (see [Troubleshooting](#troubleshooting)).
@@ -282,13 +282,15 @@ Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credential
 | Status | Meaning | Body |
 |---|---|---|
 | 200 | Done | `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "md5a+speciesnet-4.0.3a+clip-b32-v2"}` |
-| 413 | The image is larger than 30 MB | `{"error": "file is larger than 30 MB"}` |
-| 415 | `file_type` is `video` (not supported yet) | `{"error": "video files are not supported yet"}` |
+| 413 | The image is larger than 30 MB, or the video larger than 500 MB | `{"error": "file is larger than 30 MB"}` |
 | 422 | `url` is not a presigned URL for an `aussie-ecoguard-media-*` bucket's `uploads/`, bad `file_type`, or the body is not JSON (FastAPI validation) | `{"detail": [...]}` |
-| 422 | The file is not an image that can be decoded | `{"error": "file is not a valid image"}` |
+| 422 | The file cannot be decoded as an image / video | `{"error": "file is not a valid image"}`, `{"error": "file is not a valid video"}` |
+| 422 | The video is longer than 3 minutes | `{"error": "video is 190 s long; the limit is 3 minutes"}` |
 | 502 | The file could not be downloaded (e.g. the URL or the credentials that signed it expired) | `{"error": "could not download file (S3 returned 403)"}` |
 
 Cloud Run downloads the file itself from the presigned URL instead of receiving it base64-encoded: Cloud Run requests are limited to 32 MiB and base64 adds 33%, so videos would not fit.
+
+**Videos** (`file_type: "video"`, `.mp4` or `.mov`, H.264 or HEVC): the service downloads the whole file to `/tmp` (at most 500 MB), reads one frame every 10 seconds (0 s, 10 s, 20 s, ...) with OpenCV, runs every frame through the image pipeline, and returns each species' highest count in any single frame (the same animal appears in many frames, so the counts are not added up) and the colours seen in any frame. Phone videos filmed in portrait are turned upright from their rotation metadata. The file is downloaded first rather than read from the URL because the presigned URL could expire while the frames are read. A 3-minute video has 18 frames, which with a cold start fits the 300 s timeout.
 
 `tags` uses the labels in `infra/model/config.json`: the six target species (`fox`, `rabbit`, `feral pig`, `cane toad`, `cat`, `dog`), 16 other common animals (e.g. `kangaroo`, `deer`, `bird`) and `other animal` for an animal the models could not name. Counts are the boxes MegaDetector found. `attributes` only holds colours of cats and dogs. `model` is the `model_label` of the loaded config. The pipeline and its limits are described in [Model selection](#model-selection) and `inference/model.py`.
 

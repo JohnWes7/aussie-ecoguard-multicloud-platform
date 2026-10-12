@@ -42,9 +42,9 @@ echo "Deploying $SERVICE to project $PROJECT ($REGION), model $MODEL_VERSION"
 # only compete for the same CPUs. OMP_NUM_THREADS=4 makes torch use the 4 CPUs
 # it has rather than the host's core count. --cpu-boost gives extra CPU while
 # the instance starts and loads the models.
-# --timeout 120: a cold start (~1 min: download + load the models) plus the
-# slowest image measured (~12 s, 17 animals). The tagging Lambda waits the same
-# time (INFER_TIMEOUT in infra/template.yaml).
+# --timeout 300: a cold start (~1 min: download + load the models) plus the
+# longest video accepted (3 minutes = 18 frames, a few seconds each). The
+# tagging Lambda waits the same time (INFER_TIMEOUT in infra/template.yaml).
 gcloud run deploy "$SERVICE" \
   --source inference \
   --project "$PROJECT" \
@@ -60,7 +60,7 @@ gcloud run deploy "$SERVICE" \
   --cpu 4 \
   --concurrency 1 \
   --cpu-boost \
-  --timeout 120 \
+  --timeout 300 \
   --quiet
 
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format 'value(status.url)')"

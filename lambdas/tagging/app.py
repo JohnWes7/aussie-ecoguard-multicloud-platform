@@ -36,7 +36,7 @@ TABLE_NAME = os.environ["TABLE_NAME"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 INFERENCE_URL = os.environ["INFERENCE_URL"]  # Cloud Run service URL, no trailing path
 MAX_ATTEMPTS = int(os.environ.get("MAX_ATTEMPTS", "3"))  # below the queue's maxReceiveCount (5)
-INFER_TIMEOUT = int(os.environ.get("INFER_TIMEOUT", "120"))  # seconds, Cloud Run's own limit
+INFER_TIMEOUT = int(os.environ.get("INFER_TIMEOUT", "300"))  # seconds, Cloud Run's own limit
 GET_URL_EXPIRES = 300  # seconds Cloud Run has to start downloading the file
 
 KEY_RE = re.compile(r"^uploads/([0-9a-f]{64})$")

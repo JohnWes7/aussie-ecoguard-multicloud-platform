@@ -7,6 +7,7 @@ test_inference_model.py.
 
 import importlib.util
 import io
+import os
 import sys
 from pathlib import Path
 
@@ -154,12 +155,106 @@ def test_file_that_is_not_an_image_returns_422(client, main, s3_file):
     assert main.pipeline.images == []
 
 
-def test_video_returns_415_without_downloading(client, s3_file):
-    fetched = s3_file()
+class FramePipeline(FakePipeline):
+    """Returns the next (tags, attributes) from a list on every call, one per video frame."""
+
+    def __init__(self, per_frame):
+        super().__init__()
+        self.per_frame = list(per_frame)
+
+    def detect(self, image):
+        self.images.append(image)
+        return self.per_frame[len(self.images) - 1]
+
+
+@pytest.fixture
+def frames(main, monkeypatch):
+    """Replace OpenCV: read_frames returns n small images and records the file it was given."""
+    seen = {}
+
+    def use(n=2, error=None):
+        def fake_read_frames(path):
+            seen["path"], seen["content"] = path, open(path, "rb").read()
+            if error:
+                raise error
+            return [Image.new("RGB", (8, 8)) for _ in range(n)]
+        monkeypatch.setattr(main, "read_frames", fake_read_frames)
+        return seen
+
+    return use
+
+
+def test_video_frames_are_checked_and_merged(client, main, s3_file, frames):
+    s3_file(b"fake video bytes")
+    seen = frames(n=3)
+    main.pipeline = FramePipeline([({"fox": 1}, []), ({"fox": 2, "cat": 1}, ["orange"]), ({}, [])])
+
     response = client.post("/infer", json={"url": GOOD_URL, "file_type": "video"})
-    assert response.status_code == 415  # 4xx: tagging marks the file FAILED instead of retrying
-    assert response.json() == {"error": "video files are not supported yet"}
-    assert fetched == []
+
+    assert response.status_code == 200
+    assert response.json() == {"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "fake-model"}
+    assert len(main.pipeline.images) == 3
+    assert seen["content"] == b"fake video bytes"  # downloaded to a local file first
+    assert not os.path.exists(seen["path"])          # and deleted afterwards (/tmp is memory)
+
+
+def test_video_over_the_size_limit_returns_413(client, main, s3_file, frames, monkeypatch):
+    monkeypatch.setattr(main, "MAX_VIDEO_BYTES", 1000)
+    s3_file(b"x" * 1001)
+    frames()
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "video"})
+    assert response.status_code == 413
+    assert main.pipeline.images == []
+
+
+def test_video_longer_than_the_limit_returns_422(client, main, s3_file, frames):
+    s3_file(b"video")
+    frames(error=main.VideoTooLong(190.4))
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "video"})
+    assert response.status_code == 422  # 4xx: tagging marks the file FAILED instead of retrying
+    assert response.json() == {"error": "video is 190 s long; the limit is 3 minutes"}
+    assert main.pipeline.images == []
+
+
+def test_file_that_is_not_a_video_returns_422(client, main, s3_file, frames):
+    s3_file(b"not a video")
+    frames(error=main.BadVideo())
+    response = client.post("/infer", json={"url": GOOD_URL, "file_type": "video"})
+    assert response.status_code == 422
+    assert response.json() == {"error": "file is not a valid video"}
+
+
+@pytest.mark.parametrize("duration, times", [
+    (0.5, [0]), (9.9, [0]), (10, [0]), (10.1, [0, 10]), (40, [0, 10, 20, 30]),
+    (180, list(range(0, 180, 10))),  # 18 frames at the limit
+])
+def test_frame_times_are_every_10_seconds(main, duration, times):
+    assert main.frame_times(duration) == times
+
+
+def test_merge_frames_keeps_the_highest_count_not_the_sum(main):
+    results = [({"fox": 2}, ["grey"]), ({"fox": 1, "cat": 1}, ["white"]), ({"fox": 2}, ["white"])]
+    assert main.merge_frames(results) == ({"fox": 2, "cat": 1}, ["white", "grey"])
+    assert main.merge_frames([({}, []), ({}, [])]) == ({}, [])
+
+
+def test_read_frames_with_opencv(main, tmp_path, monkeypatch):
+    cv2 = pytest.importorskip("cv2")  # only in the inference venv, not in the unit-test venv
+    import numpy as np
+    path = str(tmp_path / "clip.mp4")
+    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 2, (64, 48))
+    for i in range(50):  # 25 s at 2 fps
+        writer.write(np.full((48, 64, 3), i * 5, np.uint8))
+    writer.release()
+
+    frames = main.read_frames(path)
+    assert [f.size for f in frames] == [(64, 48)] * 3  # at 0, 10 and 20 s
+
+    monkeypatch.setattr(main, "MAX_VIDEO_SECONDS", 20)
+    with pytest.raises(main.VideoTooLong):
+        main.read_frames(path)
+    with pytest.raises(main.BadVideo):
+        main.read_frames(str(tmp_path / "missing.mp4"))
 
 
 def test_file_over_the_size_limit_returns_413(client, main, s3_file, monkeypatch):

@@ -120,7 +120,7 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 |---|---|---|
 | Entry model must be MegaDetector, Ultralytics YOLO or a managed service | **MegaDetector v5a** finds and counts the animals. It was chosen after comparing ten pipelines, including YOLOv8 Open Images, Amazon Rekognition and MegaDetector + CLIP, on a labelled test set (§7.1). Plain COCO-trained YOLO is ruled out because COCO has `cat`, `dog` and `bird` but no fox, rabbit, feral pig or cane toad | ⑦ |
 | Use a new model version **without changing source code or Lambdas** | Each model version is a folder in Cloud Storage with its weights and `config.json` (thresholds, species list, mapping rules). To change model, species list or threshold, copy a version, edit it, and point Cloud Run at it with one environment variable; Cloud Run starts a new revision that downloads that version (§7.5) | ⑧ |
-| Optional model chaining | Three models in a chain: MegaDetector boxes → the **SpeciesNet** classifier names each box → when SpeciesNet is unsure about the whole image, a **CLIP** zero-shot classifier names the boxes instead. `cat` / `dog` boxes go through CLIP again for their colour (§7.2) | ⑦ |
+| Optional model chaining | Three models in a chain: MegaDetector boxes → the **SpeciesNet** classifier names each box → a **CLIP** zero-shot classifier checks every box: it names the boxes when SpeciesNet is unsure about the whole image, and overrules SpeciesNet when it is almost certain of another species. `cat` / `dog` boxes go through CLIP again for their colour (§7.2) | ⑦ |
 | No training or fine-tuning | Only pretrained weights are used | n/a |
 
 ### 5.2 File handling (Spec §4.2)
@@ -291,7 +291,9 @@ image
   → SpeciesNet classifier on every box, top 5 classes
       → mapping rules turn its taxonomy into our tags (e.g. family felidae → cat)
       → thresholds: a tag needs score ≥ 0.3; "no animal" needs ≥ 0.99
-  → if no box got a tag: CLIP zero-shot on every box instead
+  → CLIP zero-shot on every box
+      → CLIP ≥ 0.98 sure of another species: CLIP's tag replaces SpeciesNet's
+      → no box got a tag from SpeciesNet: CLIP's tags are used instead
   → image-level smoothing: unsure boxes take the dominant species
   → count the boxes per tag            {"feral pig": 11, "cattle": 4}
   → CLIP on every cat / dog box for its colour          ["black"]
@@ -300,9 +302,10 @@ image
 - **Mapping rules.** SpeciesNet knows about 2,500 classes worldwide and answers with a taxonomy such as `mammalia;carnivora;canidae;vulpes;vulpes;red fox`. Rules in `config.json` map taxonomy prefixes to our tags, first match wins: in Australia every felid is a cat, every rabbit or hare is a rabbit, every *Canis* is a dog (dingoes included), every member of the pig family is a feral pig, and so on. The scores of the top 5 classes that map to the same tag are added up.
 - **Tags.** The six species the spec names (`fox`, `rabbit`, `feral pig`, `cane toad`, `cat`, `dog`), 16 other common animals (other invasive species such as `deer` and `goat`, natives such as `kangaroo` and `wombat`, and broad groups such as `bird` and `reptile`), and `other animal` for an animal that MegaDetector found but no model could name.
 - **Smoothing** (a simplified version of MegaDetector's own): boxes without a confident tag take the image's dominant tag when it has at least 2 boxes, and a tag with a single box is overruled when the dominant tag has at least 4. Without it, only 4 of 17 distant pigs were recognised.
+- **CLIP overrules SpeciesNet** only when both name a species, they differ, and CLIP is at least 0.98 sure (`clip_override_threshold`). SpeciesNet is trained on camera-trap images and called 6 of 9 close-up pet rabbits `cat` or `goat` (scores up to 0.93), while CLIP, trained on web photos, said `rabbit` at 0.99 or more. CLIP is confidently wrong too, on tiny distant animals: its highest wrong score on the test images was 0.96 (pigs called cattle). With 0.98, 5 of the 6 rabbits are fixed and none of the 27 test images changes; with 0.95 the pig group breaks. Checking every box costs about 0.1 s per box.
 - **Colour** is only given for cats and dogs. `attributes` belongs to the file, not to one animal, so the colour of other animals would make "orange cat" match a photo of an orange fox and a grey cat.
 
-**Known limits** (also in the [repository README](../README.md)): only 26 scored test images; very small distant animals are sometimes called the wrong species (17 pigs → 11 pigs + 4 cattle); a confident SpeciesNet mistake is never checked by CLIP, e.g. a studio photo of a pet rabbit is tagged `cat`; videos are not supported yet (§5.2).
+**Known limits** (also in the [repository README](../README.md)): only 26 scored test images; very small distant animals are sometimes called the wrong species (17 pigs → 11 pigs + 4 cattle); the 0.98 override threshold rests on few images, and an old sepia photo of a rabbit is still tagged `cat`; videos are not supported yet (§5.2).
 
 ### 7.3 Running it on Cloud Run
 
@@ -333,12 +336,13 @@ gs://aussie-ecoguard-models-<project-number>/
 
 ```json
 {
-  "model_label": "md5a+speciesnet-4.0.3a+clip-b32",
+  "model_label": "md5a+speciesnet-4.0.3a+clip-b32-v2",
   "speciesnet_dir": "speciesnet-v4.0.3a",
   "clip_arch": "ViT-B-32-quickgelu",
   "clip_weights": "clip-vit-b-32/open_clip_model.safetensors",
   "detection_threshold": 0.2,
   "species_threshold": 0.3,
+  "clip_override_threshold": 0.98,
   "species": ["fox", "rabbit", "feral pig", "cane toad", "cat", "dog", "..."],
   "species_rules": [["mammalia;carnivora;canidae;vulpes;", "fox"], "..."],
   "colours": ["orange", "black", "white", "grey", "brown"],

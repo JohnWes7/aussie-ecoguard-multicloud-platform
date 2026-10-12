@@ -1,5 +1,5 @@
 {
-  "model_label": "md5a+speciesnet-4.0.3a+clip-b32",
+  "model_label": "md5a+speciesnet-4.0.3a+clip-b32-v2",
 
   "speciesnet_dir": "speciesnet-v4.0.3a",
   "clip_arch": "ViT-B-32-quickgelu",
@@ -9,6 +9,7 @@
   "species_threshold": 0.3,
   "colour_threshold": 0.4,
   "not_animal_threshold": 0.99,
+  "clip_override_threshold": 0.98,
 
   "species": [
     "fox", "rabbit", "feral pig", "cane toad", "cat", "dog",

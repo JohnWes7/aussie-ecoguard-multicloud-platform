@@ -18,7 +18,8 @@ json() { python -c "import json,sys; print(json.load(sys.stdin)$1)"; }
 API="$(output UploadUrlEndpoint)"
 TABLE="$(output MediaTableName)"
 
-SHA="$(sha256sum "$FILE" | cut -d' ' -f1)"
+# Read from stdin: given a Windows path with backslashes, sha256sum prefixes its output with "\".
+SHA="$(sha256sum < "$FILE" | cut -d' ' -f1)"
 # Only the extension matters to upload-url, so send a fixed name and avoid
 # quoting problems with unusual file names.
 EXT="${FILE##*.}"

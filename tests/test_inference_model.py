@@ -206,6 +206,31 @@ def test_needs_fallback_when_speciesnet_named_no_box(model):
     assert not model.needs_fallback([])                  # no animals: nothing to classify
 
 
+def test_clip_override_fixes_a_pet_rabbit_speciesnet_calls_cat(model, config):
+    # studio photo of a pet rabbit: SpeciesNet "cat" 0.86, CLIP "rabbit" 0.998
+    labels = model.clip_override(["cat"], [("rabbit", 0.998)], 0.98, config["species"])
+    assert labels == ["rabbit"]
+
+
+def test_clip_override_keeps_speciesnet_when_clip_is_not_sure_enough(model, config):
+    # tiny distant feral pig: CLIP "cattle" 0.96 is wrong, SpeciesNet is right
+    labels = model.clip_override(["feral pig"], [("cattle", 0.96)], 0.98, config["species"])
+    assert labels == ["feral pig"]
+
+
+def test_clip_override_only_replaces_one_species_with_another(model, config):
+    O, N = model.OTHER, model.NOT_ANIMAL
+    clip_named = [("rabbit", 0.99), (N, 0.99), ("cat", 0.99)]
+    # an unnamed box is left for smoothing / the fallback, and CLIP's
+    # "not an animal" never removes a box that SpeciesNet named
+    assert model.clip_override([O, "cat", "cat"], clip_named, 0.98, config["species"]) == [O, "cat", "cat"]
+
+
+def test_clip_override_is_off_without_a_threshold(model, config):
+    # a config.json from before this rule has no clip_override_threshold
+    assert model.clip_override(["cat"], [("rabbit", 1.0)], None, config["species"]) == ["cat"]
+
+
 def test_clip_not_an_animal_wins_without_a_threshold(model):
     # CLIP is the last model: a statue whose best CLIP answer is "not an
     # animal" at only 0.25 is dropped, not tagged "other animal"

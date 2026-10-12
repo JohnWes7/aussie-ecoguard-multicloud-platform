@@ -6,8 +6,9 @@ The pipeline was chosen in experiments/model-selection (see its README):
      mapped to our tag list with species_rules (see to_species).
   3. Image-level smoothing: boxes it is unsure about follow the image's
      dominant species ("700 cows and one deer is really 701 cows").
-  4. If no box reaches species_threshold, CLIP zero-shot names the boxes
-     instead (model chaining, Spec 4.1).
+  4. CLIP zero-shot also looks at every box (model chaining, Spec 4.1). If it
+     is almost certain of a different species, it overrules SpeciesNet
+     (clip_override). If SpeciesNet named no box at all, CLIP names them.
   5. Animals that are still unnamed are counted as unknown_tag ("other animal").
   6. CLIP gives the colour of the species in colour_for (cats and dogs).
 
@@ -146,6 +147,24 @@ def needs_fallback(labels):
     return bool(labels) and all(label == OTHER for label in labels)
 
 
+def clip_override(labels, clip_named, threshold, species):
+    """Let CLIP correct a box when it is almost certain and disagrees.
+
+    SpeciesNet is trained on camera-trap images. On close-up pet photos it can
+    be confidently wrong (pet rabbits called "cat" at 0.93 or "goat"), while
+    CLIP, trained on web photos, says "rabbit" at 0.99+. CLIP is confidently
+    wrong too, though: tiny distant pigs are "cattle" at 0.96. So a box only
+    changes when both name a species and CLIP's probability is >= threshold
+    (0.98 in config.json, tested on the experiment images plus 17 pet photos).
+    threshold None (a config without the setting) turns this off.
+    """
+    if threshold is None:
+        return list(labels)
+    return [clip_label if (label in species and clip_label in species
+                           and clip_label != label and p >= threshold) else label
+            for label, (clip_label, p) in zip(labels, clip_named)]
+
+
 def count_species(labels, species, unknown_tag):
     """{"fox": 2, "other animal": 1} from the final box labels.
 
@@ -232,12 +251,14 @@ class Pipeline:
         # SpeciesNet's "blank" must be very sure to overrule MegaDetector (see
         # apply_threshold).
         labels = apply_threshold(named, c["species_threshold"], {NOT_ANIMAL: c["not_animal_threshold"]})
+        # CLIP looks at every box once; the same answers serve both steps below.
+        clip_named = [self.clip_top(crop(img, b), self.species_text, self.clip_labels) for b in boxes]
+        labels = clip_override(labels, clip_named, c.get("clip_override_threshold"), c["species"])
         if needs_fallback(labels):
             # CLIP is the last model in the chain: if "not an animal" is its
             # best answer, drop the box rather than tag it "other animal" on
             # MegaDetector's word alone (e.g. a statue).
-            named = [self.clip_top(crop(img, b), self.species_text, self.clip_labels) for b in boxes]
-            labels = apply_threshold(named, c["species_threshold"], {NOT_ANIMAL: 0.0})
+            labels = apply_threshold(clip_named, c["species_threshold"], {NOT_ANIMAL: 0.0})
         labels = smooth(labels)
         tags = count_species(labels, c["species"], c["unknown_tag"])
 

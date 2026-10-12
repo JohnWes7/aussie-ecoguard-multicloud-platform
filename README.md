@@ -22,13 +22,13 @@ The backbone works end to end: website → upload to S3 → inference with the r
 
 We compared ten detection/classification pipelines, including MegaDetector + CLIP, YOLOv8 Open Images, Amazon Rekognition and Google SpeciesNet, on a hand-labelled test set of 27 images. The method, results and reasoning are in [experiments/model-selection/README.md](experiments/model-selection/README.md).
 
-Chosen pipeline: **MegaDetector v5a** (entry model) finds and counts animals → the **SpeciesNet** classifier names each box, with Australia-specific mapping rules and image-level smoothing → images SpeciesNet is unsure about go to **CLIP** zero-shot instead → CLIP gives the colour of cats and dogs. It got the species exactly right on 23 of 26 test images, with a total count error of 9. MegaDetector + CLIP alone scored 21–22 with a count error of 31–37, and Rekognition scored 17. How it runs on Cloud Run and how to swap models: [architecture/README.md §7](architecture/README.md#7-model).
+Chosen pipeline: **MegaDetector v5a** (entry model) finds and counts animals → the **SpeciesNet** classifier names each box, with Australia-specific mapping rules and image-level smoothing → **CLIP** zero-shot checks every box: it names the boxes of images SpeciesNet is unsure about, and overrules SpeciesNet when it is almost certain (≥ 0.98) of another species → CLIP gives the colour of cats and dogs. It got the species exactly right on 23 of 26 test images, with a total count error of 9. MegaDetector + CLIP alone scored 21–22 with a count error of 31–37, and Rekognition scored 17. How it runs on Cloud Run and how to swap models: [architecture/README.md §7](architecture/README.md#7-model).
 
 Known limits of the deployed model:
 
 - The test set is small (26 scored images, only 5 camera-trap photos), and the thresholds were not tuned on a larger set.
 - Very small, distant animals are sometimes named wrongly: a group of 17 feral pigs comes out as 11 feral pigs and 4 cattle. Smoothing only fixes boxes that got no tag at all.
-- When SpeciesNet is confidently wrong, CLIP is never asked. SpeciesNet is trained on camera-trap photos, so close-up pet photos can fool it: a studio photo of a pet rabbit is tagged `cat` (CLIP alone says rabbit at 0.998).
+- SpeciesNet is trained on camera-trap photos, so close-up pet photos can fool it: it called 6 of 9 pet rabbits `cat` or `goat`. CLIP overrules it when CLIP is at least 0.98 sure, which fixed 5 of them (17 pet photos: 11 → 16 right) without changing any result on the 27 test images. An old sepia photo of a rabbit is still tagged `cat`. The 0.98 threshold sits between CLIP's most confident mistake on the test images (tiny pigs called cattle at 0.96) and the pet rabbits (0.99+), so it rests on few images.
 - Cane toads are SpeciesNet's weak spot and depend on the CLIP fallback; a toad held in a bird's beak is not found.
 - The mapping rules group by family or genus: every felid is `cat`, every *Canis* (dingo included) is `dog`. Animals with no rule, such as quolls, become `other animal`.
 - Colour is only given for cats and dogs, and was checked on just 6 images.
@@ -247,7 +247,7 @@ Lists every file with its tags, newest first. The website's library uses it.
 {"files": [
   {"file_id": "<sha256>", "filename": "fox.jpg", "status": "READY", "file_type": "image",
    "created_at": "2026-10-11T08:27:43+00:00", "tags": {"fox": 2, "cat": 1}, "attributes": ["orange"],
-   "model": "md5a+speciesnet-4.0.3a+clip-b32", "preview_url": "<presigned GET URL, valid for 1 hour>"}
+   "model": "md5a+speciesnet-4.0.3a+clip-b32-v2", "preview_url": "<presigned GET URL, valid for 1 hour>"}
 ]}
 ```
 
@@ -281,7 +281,7 @@ Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credential
 
 | Status | Meaning | Body |
 |---|---|---|
-| 200 | Done | `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "md5a+speciesnet-4.0.3a+clip-b32"}` |
+| 200 | Done | `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "md5a+speciesnet-4.0.3a+clip-b32-v2"}` |
 | 413 | The image is larger than 30 MB | `{"error": "file is larger than 30 MB"}` |
 | 415 | `file_type` is `video` (not supported yet) | `{"error": "video files are not supported yet"}` |
 | 422 | `url` is not a presigned URL for an `aussie-ecoguard-media-*` bucket's `uploads/`, bad `file_type`, or the body is not JSON (FastAPI validation) | `{"detail": [...]}` |
@@ -292,7 +292,7 @@ Cloud Run downloads the file itself from the presigned URL instead of receiving 
 
 `tags` uses the labels in `infra/model/config.json`: the six target species (`fox`, `rabbit`, `feral pig`, `cane toad`, `cat`, `dog`), 16 other common animals (e.g. `kangaroo`, `deer`, `bird`) and `other animal` for an animal the models could not name. Counts are the boxes MegaDetector found. `attributes` only holds colours of cats and dogs. `model` is the `model_label` of the loaded config. The pipeline and its limits are described in [Model selection](#model-selection) and `inference/model.py`.
 
-`GET /health` returns `{"status": "ok", "model": "md5a+speciesnet-4.0.3a+clip-b32"}`.
+`GET /health` returns `{"status": "ok", "model": "md5a+speciesnet-4.0.3a+clip-b32-v2"}`.
 
 `GET /docs` is the interactive API documentation that FastAPI generates from the request and response types in `inference/main.py` (`/openapi.json` has the raw schema).
 

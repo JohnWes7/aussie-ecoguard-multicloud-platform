@@ -22,8 +22,8 @@ AWS is the primary cloud. It hosts authentication, the REST API, storage, the da
 | AWS | Amazon Lex V2 | Chatbot that turns natural-language queries into intents and slots |
 | AWS | Amazon SNS | Sends tag-based email notifications, filtered per subscriber |
 | AWS | AWS Secrets Manager | Holds the GCP service-account key that AWS uses to call Cloud Run |
-| GCP | Cloud Run | Containerised YOLO / MegaDetector inference API |
-| GCP | Cloud Storage | Model weights and a `config.json` that names the active model version |
+| GCP | Cloud Run | Containerised inference API: MegaDetector → SpeciesNet → CLIP (§7) |
+| GCP | Cloud Storage | Model versions: one folder per version with the weights and a `config.json` (§7.5) |
 
 AWS runs in `us-east-1`, the region AWS Academy Learner Lab allows. GCP runs in `us-east4` (Northern Virginia), next to `us-east-1`: the only caller of Cloud Run is the `tagging` Lambda, and Cloud Run downloads each file from the S3 bucket in `us-east-1`, so keeping both clouds in the same area avoids a trans-Pacific round trip on every call and every video frame read.
 
@@ -58,7 +58,7 @@ Browser                API Gateway + upload-url λ        S3 media bucket       
 5. **Event routing.** S3 sends an "Object Created" event to EventBridge. Two EventBridge rules, both filtered to the `uploads/` prefix, start the two processing Lambdas in parallel:
    - **⑤ `thumbnail`** reads the object with `GetObject` and first checks the `Content-Type` in the response. Keys have no extension, so the rule cannot filter by suffix; for anything that is not `image/*` the Lambda returns before reading the body. For images it resizes the picture while keeping the aspect ratio, compresses it with OpenCV, and writes the result to `thumbnails/`. Because the rules only match `uploads/`, writing a thumbnail does not trigger the pipeline again.
    - **⑥ `tagging`** is fed through an SQS queue (§4). It first moves the `META` item from `PENDING` to `PROCESSING`, then creates a presigned **GET** URL for the object and sends it, with the `file_type`, to Cloud Run (⑦). The call is authenticated with a GCP ID token minted from the service-account key held in Secrets Manager.
-6. **⑦ ⑧ Inference on GCP.** Cloud Run reads `config.json` from Cloud Storage to find the active model version, loads those weights (cached between requests), runs detection and returns per-species counts such as `{"fox": 2, "cat": 1}`. **Videos:** one frame is extracted every 10 seconds and each frame is run through the detector. The stored count for each species is the highest count seen in any single frame, so the same animal is not counted twice across frames.
+6. **⑦ ⑧ Inference on GCP.** When a Cloud Run instance starts, it downloads its model version (weights and `config.json`) from Cloud Storage and loads the models once (§7.5). For each request it downloads the file from the presigned URL, runs the pipeline in §7 and returns per-species counts and colour attributes such as `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"]}`. **Videos:** one frame is extracted every 10 seconds and each frame is run through the detector. The stored count for each species is the highest count seen in any single frame, so the same animal is not counted twice across frames.
 7. **⑨ Persist.** `tagging` writes to the `Media` table in a single transaction: it updates the `META` item from `PROCESSING` to `READY`, adding the thumbnail URL and colour attributes (file type and file URL are already there from `upload-url`), and puts one `TAG#<species>` item per species with its count (§6). If inference fails, the `META` item becomes `FAILED` instead (§3.1).
 8. **⑩ Notify.** Each new `TAG#` item appears on the DynamoDB Stream. The `notify` Lambda publishes to SNS with the species as message attributes, and each subscriber's **filter policy** decides who receives an email.
 
@@ -106,7 +106,7 @@ An SNS topic fan-out (S3 → SNS → two Lambdas) would also work. EventBridge w
 - **Nothing is lost while the function cannot run.** Messages stay in the queue for up to 4 days, for example while Lambda has turned the queue trigger off after a Learner Lab session ended. Capping a directly invoked function with reserved concurrency would also limit the load, but Lambda keeps throttled asynchronous events for at most 6 hours, and retries a failed invocation only twice.
 - **Retries without waiting inside Lambda.** When Cloud Run has a temporary problem, `tagging` raises an error and SQS delivers the message again after the visibility timeout. The function does not sleep between attempts, so no Lambda time is billed while waiting.
 - **Dead-letter queue.** A message that keeps crashing the function moves to `aussie-ecoguard-tagging-dlq` and is kept for 14 days. After a fix it can be sent back with one click ("Start DLQ redrive").
-- **Settings follow the AWS guidance for SQS event sources:** a visibility timeout of six times the function timeout (450 s for 75 s) and a `maxReceiveCount` of 5. `tagging` itself gives up and writes `FAILED` on the 3rd attempt (§3.1), so the 4th and 5th deliveries are only a margin for crashes.
+- **Settings follow the AWS guidance for SQS event sources:** a visibility timeout of six times the function timeout (810 s for 135 s) and a `maxReceiveCount` of 5. The function timeout covers one Cloud Run call of up to 120 s: a cold start (about a minute to download and load the models) plus inference. `tagging` itself gives up and writes `FAILED` on the 3rd attempt (§3.1), so the 4th and 5th deliveries are only a margin for crashes.
 
 ## 5. Core features (Spec §4), requirement by requirement
 
@@ -118,9 +118,9 @@ This section maps each requirement in Spec §4 to the flow that implements it. E
 
 | Requirement | How it is met | Diagram |
 |---|---|---|
-| Entry model must be MegaDetector, Ultralytics YOLO or a managed service | Two candidate pipelines, both starting with an allowed entry model, are compared in §7: **MegaDetector + CLIP** (recommended) and **Ultralytics YOLO-World**. Plain COCO-trained YOLO is ruled out because COCO has `cat`, `dog` and `bird` but no fox, rabbit, feral pig or cane toad | ⑦ |
-| Use a new model version **without changing source code or Lambdas** | Weights and settings live in Cloud Storage. To change model, species list or threshold, upload new weights and edit `config.json`; Cloud Run reloads it on cold start and on a refresh interval (§7.5) | ⑧ |
-| Optional model chaining | In the recommended pipeline, MegaDetector finds and counts the animals and each crop is passed to a **CLIP zero-shot classifier** (Hugging Face) that names the species. `cat` / `dog` crops go through CLIP a second time to get colour attributes | ⑦ |
+| Entry model must be MegaDetector, Ultralytics YOLO or a managed service | **MegaDetector v5a** finds and counts the animals. It was chosen after comparing ten pipelines, including YOLOv8 Open Images, Amazon Rekognition and MegaDetector + CLIP, on a labelled test set (§7.1). Plain COCO-trained YOLO is ruled out because COCO has `cat`, `dog` and `bird` but no fox, rabbit, feral pig or cane toad | ⑦ |
+| Use a new model version **without changing source code or Lambdas** | Each model version is a folder in Cloud Storage with its weights and `config.json` (thresholds, species list, mapping rules). To change model, species list or threshold, copy a version, edit it, and point Cloud Run at it with one environment variable; Cloud Run starts a new revision that downloads that version (§7.5) | ⑧ |
+| Optional model chaining | Three models in a chain: MegaDetector boxes → the **SpeciesNet** classifier names each box → when SpeciesNet is unsure about the whole image, a **CLIP** zero-shot classifier names the boxes instead. `cat` / `dog` boxes go through CLIP again for their colour (§7.2) | ⑦ |
 | No training or fine-tuning | Only pretrained weights are used | n/a |
 
 ### 5.2 File handling (Spec §4.2)
@@ -263,100 +263,102 @@ This is a **sparse index**: `META` items have no `tag` attribute, so DynamoDB le
 - **Every status change is a conditional write** (§3.1). Two requests or two deliveries of the same event cannot both win, and a file's status only changes along the arrows of the diagram there.
 - **The GSI is eventually consistent.** A new tag normally becomes searchable within a second. A search issued immediately after an upload may miss the new file, which is acceptable for this application. Reads by primary key, such as file details or "thumbnail to original", can use strongly consistent reads.
 
-## 7. Model options
+## 7. Model
 
 The inference service has to do two things:
 
 1. **Detect and count animals, and name their species.** This is required, e.g. `{"fox": 2}`; tag queries and notifications depend on it.
 2. **Describe pets with attributes such as colour.** The spec only requires that users *can search* by breed or colour. Colour tags can come from manual tagging (§5.3), so automatic colour recognition is an enhancement that makes the lost-pet and chatbot demos work without manual effort.
 
-Two pipelines were considered. The snippets below are untested sketches; check exact signatures against the installed package versions.
+### 7.1 How the model was chosen
 
-### 7.1 Option A: Ultralytics YOLO-World (simplest)
+Ten pipelines were compared on 27 hand-labelled images (camera-trap shots including night infrared, groups of 12–17 animals, hidden animals, cats and dogs in one photo, and look-alikes such as kangaroos and a toad statue): MegaDetector (v5a and v1000) + CLIP, MegaDetector + BioCLIP, YOLOv8 trained on Open Images, Amazon Rekognition, Google SpeciesNet (its own ensemble, and with our Australia rules), and chains of SpeciesNet and CLIP. YOLO-World, considered in an earlier draft of this document, was not tested. The method, data and results are in [experiments/model-selection/README.md](../experiments/model-selection/README.md).
 
-YOLO-World is an open-vocabulary detector: it is given the class names as text, so a single model detects, names and counts the species.
+| Pipeline | Species exactly right | Total count error |
+|---|---|---|
+| **MegaDetector → SpeciesNet (per box, smoothed) → CLIP fallback (chosen)** | **23/26** | **9** |
+| MegaDetector + CLIP | 21–22/26 | 31–37 |
+| SpeciesNet's own ensemble | 15/26 | — |
+| Amazon Rekognition | 17/26 | cannot count reliably |
 
-```python
-from collections import Counter
-from ultralytics import YOLOWorld
+CLIP and SpeciesNet fail in different places, which is why the chain works: SpeciesNet is trained on camera-trap images and is strong on small, blurry and night crops, but weak on cane toads. CLIP is trained on web photos, gets the toads right, and is weak on camera-trap crops.
 
-model = YOLOWorld("yolov8s-worldv2.pt")
-model.set_classes(["fox", "rabbit", "feral pig", "cane toad", "cat", "dog"])  # from config.json
-r = model.predict("img.jpg", conf=0.3)[0]
-counts = Counter(r.names[int(c)] for c in r.boxes.cls)   # {"fox": 2, "cat": 1}
+### 7.2 The pipeline
+
+```
+image
+  → MegaDetector v5a: one box per animal (confidence ≥ 0.2)
+  → SpeciesNet classifier on every box, top 5 classes
+      → mapping rules turn its taxonomy into our tags (e.g. family felidae → cat)
+      → thresholds: a tag needs score ≥ 0.3; "no animal" needs ≥ 0.99
+  → if no box got a tag: CLIP zero-shot on every box instead
+  → image-level smoothing: unsure boxes take the dominant species
+  → count the boxes per tag            {"feral pig": 11, "cattle": 4}
+  → CLIP on every cat / dog box for its colour          ["black"]
 ```
 
-- **Pros:** one model and about a dozen lines; the species list is plain text.
-- **Cons:** it is a general-purpose model, so accuracy may drop on camera-trap images (night IR, blur, occlusion) and on uncommon species such as cane toads. `set_classes` downloads a CLIP text encoder at run time. To avoid that on cold start, set the classes at image build time and save the result as a new `.pt`.
+- **Mapping rules.** SpeciesNet knows about 2,500 classes worldwide and answers with a taxonomy such as `mammalia;carnivora;canidae;vulpes;vulpes;red fox`. Rules in `config.json` map taxonomy prefixes to our tags, first match wins: in Australia every felid is a cat, every rabbit or hare is a rabbit, every *Canis* is a dog (dingoes included), every member of the pig family is a feral pig, and so on. The scores of the top 5 classes that map to the same tag are added up.
+- **Tags.** The six species the spec names (`fox`, `rabbit`, `feral pig`, `cane toad`, `cat`, `dog`), 16 other common animals (other invasive species such as `deer` and `goat`, natives such as `kangaroo` and `wombat`, and broad groups such as `bird` and `reptile`), and `other animal` for an animal that MegaDetector found but no model could name.
+- **Smoothing** (a simplified version of MegaDetector's own): boxes without a confident tag take the image's dominant tag when it has at least 2 boxes, and a tag with a single box is overruled when the dominant tag has at least 4. Without it, only 4 of 17 distant pigs were recognised.
+- **Colour** is only given for cats and dogs. `attributes` belongs to the file, not to one animal, so the colour of other animals would make "orange cat" match a photo of an orange fox and a grey cat.
 
-### 7.2 Option B: MegaDetector + CLIP (recommended)
+**Known limits** (also in the [repository README](../README.md)): only 26 scored test images; very small distant animals are sometimes called the wrong species (17 pigs → 11 pigs + 4 cattle); a confident SpeciesNet mistake is never checked by CLIP, e.g. a studio photo of a pet rabbit is tagged `cat`; videos are not supported yet (§5.2).
 
-MegaDetector is trained specifically on camera-trap imagery, but it has only three classes: `animal`, `person` and `vehicle`. It finds and counts animals reliably; a CLIP zero-shot classifier then names each one.
+### 7.3 Running it on Cloud Run
 
-```python
-from collections import Counter
-from megadetector.detection.run_detector import load_detector
-from megadetector.visualization.visualization_utils import load_image
-from transformers import pipeline
+| Setting | Value | Why |
+|---|---|---|
+| Resources | 4 vCPU, 8 GiB | The models need about 3 GB at peak, plus 1.1 GB while the downloaded files are in `/tmp` (memory on Cloud Run). With 4 CPUs inference takes half as long as with 2, so an image costs slightly less |
+| Concurrency | 1 request per instance | A second request would only compete for the same CPUs |
+| Instances | 0 to 2 | Scales to zero when idle; 2 matches the SQS `MaximumConcurrency` (§4) |
+| Request timeout | 120 s | A cold start plus the slowest image measured |
 
-detector = load_detector("MDV5A")
-clf = pipeline("zero-shot-image-classification", model="openai/clip-vit-base-patch32")
-SPECIES = ["fox", "rabbit", "feral pig", "cane toad", "cat", "dog"]  # from config.json
+Measured: 4–12 s per image (12 s for 17 animals); a new instance needs about a minute before it answers (download about 17 s, then loading). So the first upload after about 15 idle minutes waits about a minute.
 
-img = load_image("img.jpg")
-W, H = img.size
-counts = Counter()
-for d in detector.generate_detections_one_image(img, detection_threshold=0.2)["detections"]:
-    if d["category"] != "1":          # 1 = animal, 2 = person, 3 = vehicle
-        continue
-    x, y, w, h = d["bbox"]            # normalised
-    crop = img.crop((x * W, y * H, (x + w) * W, (y + h) * H))
-    best = clf(crop, candidate_labels=[f"a photo of a {s}" for s in SPECIES])[0]
-    counts[best["label"].removeprefix("a photo of a ")] += 1
-```
+### 7.4 Colour attributes
 
-- **Pros:** accurate detection and counting on this domain; the spec lists it first; the two-stage design is the model chaining that Spec §4.1 describes.
-- **Cons:** two models (about 300 MB + 600 MB), more code, and a Cloud Run instance with 2–4 GiB of memory.
-
-### 7.3 Colour attributes
-
-Both options produce a bounding box for each animal, so colour is recognised in the same way:
-
-- **CLIP zero-shot (chosen):** for each `cat` / `dog` crop, score labels such as `"a photo of an orange cat"`, `"a photo of a black cat"`, and store the best colour in `attributes`. Option B already has CLIP loaded, so this costs no extra model. Breeds can be prompted the same way, with lower accuracy.
-- **OpenCV dominant colour (fallback):** convert the centre of the crop to HSV and pick the most common hue range. It needs no model but is sensitive to background and lighting.
-
-### 7.4 Comparison and recommendation
-
-| Pipeline | Species | Colour | Models | Effort | Expected accuracy |
-|---|---|---|---|---|---|
-| YOLO-World + OpenCV colour | YOLO-World | OpenCV | 1 | Lowest | Fair |
-| YOLO-World + CLIP colour | YOLO-World | CLIP | 2 | Low | Medium |
-| **MegaDetector + CLIP** | MegaDetector boxes, CLIP species | CLIP | 2 | Medium | High |
-
-YOLO-World is the simplest way to get species. Once colour is recognised automatically, though, both options need CLIP, and the extra effort for MegaDetector is small. **Recommendation: Option B, MegaDetector + CLIP.** One CLIP model handles both species and colour, MegaDetector suits the camera-trap scenario, and it is the spec's first listed option. Before committing, run both pipelines on a small labelled sample (foxes, rabbits, cats, a cane toad, a few night camera-trap shots) and compare the accuracy.
+For each `cat` / `dog` box, CLIP scores prompts such as `"a photo of an orange cat"` and `"a photo of a black cat"` for the colours in `config.json`, and the best colour (probability ≥ 0.4) goes into `attributes`. CLIP is already loaded for the fallback, so this costs no extra model. Breeds could be prompted the same way, with lower accuracy.
 
 ### 7.5 Swapping models without changing code
 
-Weights live in Cloud Storage and `config.json` names everything the service loads:
+The model files are not in the container image. Each model version is a folder in the Cloud Storage bucket `aussie-ecoguard-models-<project-number>`:
+
+```
+gs://aussie-ecoguard-models-<project-number>/
+  v1/config.json                  thresholds, tags, mapping rules, CLIP prompts, file names
+  v1/speciesnet-v4.0.3a/...       SpeciesNet classifier + MegaDetector weights
+  v1/clip-vit-b-32/...            CLIP weights
+  v2/...                          a later version
+```
 
 ```json
 {
-  "detector": "MDV5A",
+  "model_label": "md5a+speciesnet-4.0.3a+clip-b32",
+  "speciesnet_dir": "speciesnet-v4.0.3a",
+  "clip_arch": "ViT-B-32-quickgelu",
+  "clip_weights": "clip-vit-b-32/open_clip_model.safetensors",
   "detection_threshold": 0.2,
-  "classifier": "openai/clip-vit-base-patch32",
-  "species": ["fox", "rabbit", "feral pig", "cane toad", "cat", "dog"],
+  "species_threshold": 0.3,
+  "species": ["fox", "rabbit", "feral pig", "cane toad", "cat", "dog", "..."],
+  "species_rules": [["mammalia;carnivora;canidae;vulpes;", "fox"], "..."],
   "colours": ["orange", "black", "white", "grey", "brown"],
   "colour_for": ["cat", "dog"]
 }
 ```
 
-Switching models, adding a species or changing a threshold means uploading weights if needed and editing `config.json`. Neither the Lambda functions nor the Cloud Run container need to change. Cloud Run checks the config on each cold start and at a fixed refresh interval.
+The Cloud Run environment variable `MODEL_GCS` names one version (e.g. `gs://…/v1`). When an instance starts, it downloads that folder in parallel chunks and loads the models once. `model_label` is stored with every tagged file, so it is clear which model tagged what.
+
+To switch models, add a species or change a threshold: copy a version inside Cloud Storage, edit its `config.json` (or replace weights), and set `MODEL_GCS` to the new folder. Neither the Lambda functions nor the container image change. Changing the variable creates a new Cloud Run **revision**; traffic moves to it only once it has started, so a broken version never serves requests. Versions are never edited in place, so every revision keeps the model it started with, and setting `MODEL_GCS` back rolls the model back. The service does not re-read the config while it runs, so two instances never use different models.
+
+Reading the weights through a Cloud Storage FUSE volume mount instead was tried first: loading took 174 s (217 s with buffered reads), against about 17 s to download the files and then load them from `/tmp`. Google's guidance for models on Cloud Run also ranks downloading at startup as the fastest option.
 
 ## 8. Key design decisions
 
 | Decision | Reason |
 |---|---|
-| ML inference on GCP Cloud Run instead of Lambda | MegaDetector plus CLIP on PyTorch makes a container of several GB. Cloud Run handles large images, scales to zero, offers more memory per instance and has an optional GPU. This is a real technical reason to use a second cloud, not multi-cloud for its own sake |
+| ML inference on GCP Cloud Run instead of Lambda | Three PyTorch models need about 3 GB of memory and a container of several GB. Cloud Run handles large images, scales to zero, offers more memory and CPU per instance and has an optional GPU. This is a real technical reason to use a second cloud, not multi-cloud for its own sake |
+| Model versions as folders in Cloud Storage, chosen by an environment variable | Changing the model needs no code or image change, and every Cloud Run revision keeps the version it started with, so a rollback really restores the old model |
+| Download the model at startup instead of mounting the bucket | Reading the weights through a Cloud Storage FUSE mount took about 3 minutes to load; downloading them first takes about 17 s (§7.5) |
 | **AWS calls GCP, never the other way round** | AWS Academy credentials expire every few hours, so GCP must not hold AWS keys. AWS sends GCP a presigned URL and gets the result back in the HTTP response, and GCP never touches S3 or DynamoDB with AWS credentials |
 | Presigned URL uploads straight to S3 | Gets around the 10 MB API Gateway / 6 MB Lambda payload limits, and the large file never passes through a Lambda |
 | Checksum-signed presigned PUT | Deduplication cannot be bypassed by sending one hash and uploading different content |

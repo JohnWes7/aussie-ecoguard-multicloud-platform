@@ -22,7 +22,17 @@ The backbone works end to end: website → upload to S3 → inference with the r
 
 We compared ten detection/classification pipelines, including MegaDetector + CLIP, YOLOv8 Open Images, Amazon Rekognition and Google SpeciesNet, on a hand-labelled test set of 27 images. The method, results and reasoning are in [experiments/model-selection/README.md](experiments/model-selection/README.md).
 
-Chosen pipeline: **MegaDetector v5a** (entry model) finds and counts animals → the **SpeciesNet** classifier names each box, with Australia-specific mapping rules and image-level smoothing → images SpeciesNet is unsure about go to **CLIP** zero-shot instead → CLIP gives the colour of cats and dogs. It got the species exactly right on 23 of 26 test images, with a total count error of 9. MegaDetector + CLIP alone scored 21–22 with a count error of 31–37, and Rekognition scored 17.
+Chosen pipeline: **MegaDetector v5a** (entry model) finds and counts animals → the **SpeciesNet** classifier names each box, with Australia-specific mapping rules and image-level smoothing → images SpeciesNet is unsure about go to **CLIP** zero-shot instead → CLIP gives the colour of cats and dogs. It got the species exactly right on 23 of 26 test images, with a total count error of 9. MegaDetector + CLIP alone scored 21–22 with a count error of 31–37, and Rekognition scored 17. How it runs on Cloud Run and how to swap models: [architecture/README.md §7](architecture/README.md#7-model).
+
+Known limits of the deployed model:
+
+- The test set is small (26 scored images, only 5 camera-trap photos), and the thresholds were not tuned on a larger set.
+- Very small, distant animals are sometimes named wrongly: a group of 17 feral pigs comes out as 11 feral pigs and 4 cattle. Smoothing only fixes boxes that got no tag at all.
+- When SpeciesNet is confidently wrong, CLIP is never asked. SpeciesNet is trained on camera-trap photos, so close-up pet photos can fool it: a studio photo of a pet rabbit is tagged `cat` (CLIP alone says rabbit at 0.998).
+- Cane toads are SpeciesNet's weak spot and depend on the CLIP fallback; a toad held in a bird's beak is not found.
+- The mapping rules group by family or genus: every felid is `cat`, every *Canis* (dingo included) is `dog`. Animals with no rule, such as quolls, become `other animal`.
+- Colour is only given for cats and dogs, and was checked on just 6 images.
+- Videos are not supported yet (they become `FAILED`).
 
 ## Repository layout
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
+import boto3
 import pytest
 
 from conftest import BUCKET_NAME, load_lambda
@@ -113,15 +114,36 @@ def test_get_ready_file_with_preview_url(app, table):
     assert "X-Amz-Signature" in file["preview_url"]
 
 
-def test_get_pending_file_has_no_preview(app, table):
-    # The website polls a file it has just uploaded, before tagging picks it up.
+def test_get_pending_file_not_uploaded_yet_has_no_preview(app, table):
+    # upload-url has issued the URL but the browser has not PUT the file yet.
     put_file(table, FOX, status="PENDING")
 
     status, file = get_file(app, FOX)
 
     assert status == 200
     assert file["status"] == "PENDING"
+    assert file["uploaded"] is False
     assert "preview_url" not in file
+
+
+def test_get_pending_file_already_in_s3_is_uploaded_with_preview(app, table):
+    # The PUT is done but the file waits in the tagging queue (still PENDING).
+    put_file(table, FOX, status="PENDING")
+    boto3.client("s3").put_object(Bucket=BUCKET_NAME, Key=f"uploads/{FOX}", Body=b"fox")
+
+    status, file = get_file(app, FOX)
+
+    assert file["status"] == "PENDING"
+    assert file["uploaded"] is True
+    assert f"uploads/{FOX}" in file["preview_url"]
+
+
+def test_uploaded_is_only_reported_for_pending_files(app, table):
+    put_file(table, FOX, status="READY")
+
+    status, file = get_file(app, FOX)
+
+    assert "uploaded" not in file
 
 
 def test_get_accepts_upper_case_sha(app, table):

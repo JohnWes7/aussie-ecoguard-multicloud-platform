@@ -46,9 +46,9 @@ async function poll(fileId) {
       }
       if (!response.ok) continue; // try again on the next round
       const file = await response.json();
-      // Redraw only when the status changes: each response has a freshly
+      // Redraw only when the stage changes: each response has a freshly
       // signed preview URL, so redrawing would download the image again.
-      if (card && card.dataset.status !== file.status) card.replaceWith(renderCard(file));
+      if (card && card.dataset.stage !== stage(file)) card.replaceWith(renderCard(file));
       if (FINISHED.includes(file.status)) return;
     }
   } catch {
@@ -63,7 +63,7 @@ async function poll(fileId) {
 function renderCard(file) {
   const col = el("div", "col");
   col.dataset.fileId = file.file_id;
-  col.dataset.status = file.status;
+  col.dataset.stage = stage(file);
   const card = el("div", "card h-100 shadow-sm");
   col.append(card);
 
@@ -77,6 +77,13 @@ function renderCard(file) {
   body.append(title, el("p", "card-text small text-body-secondary mb-2", `${file.file_type} · ${when}`));
   body.append(renderStatus(file));
   return col;
+}
+
+// The status, with PENDING split in two: the PUT to S3 is still running, or
+// the file is in S3 and waits in the tagging queue (2 files are tagged at a time).
+function stage(file) {
+  if (file.status !== "PENDING") return file.status;
+  return file.uploaded ? "QUEUED" : "UPLOADING";
 }
 
 function renderPreview(file) {
@@ -99,8 +106,10 @@ function renderPreview(file) {
 
 function renderStatus(file) {
   const box = el("div");
-  if (file.status === "PENDING") {
-    box.append(badge("Queued", "secondary"));
+  if (stage(file) === "UPLOADING") {
+    box.append(badge("Uploading...", "secondary"));
+  } else if (stage(file) === "QUEUED") {
+    box.append(badge("Queued for tagging", "secondary"));
   } else if (file.status === "PROCESSING") {
     box.append(badge("Detecting species...", "info"));
   } else if (file.status === "FAILED") {

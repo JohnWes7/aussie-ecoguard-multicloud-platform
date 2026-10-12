@@ -9,7 +9,8 @@ GET /files/{sha256}  -> one file, any status (the website polls it until the
 A file looks like:
   {"file_id", "filename", "status", "file_type", "created_at",
    "tags": {"fox": 2}, "attributes": ["orange"], "model", "error",
-   "preview_url"}   presigned GET URL of the original, absent while PENDING
+   "uploaded",      PENDING only: true once the file is in S3 (queued for tagging)
+   "preview_url"}   presigned GET URL of the original, absent until it is in S3
 """
 
 import json
@@ -21,6 +22,7 @@ from datetime import datetime, timezone
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 TABLE_NAME = os.environ["TABLE_NAME"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
@@ -102,14 +104,26 @@ def to_file(items):
     for optional in ("model", "error"):
         if optional in meta:
             file[optional] = meta[optional]
-    # A PENDING file may not be in S3 yet, so there is nothing to show.
-    if meta["status"] != "PENDING":
+    # A PENDING file is either still waiting for the browser's PUT, or already
+    # in S3 and waiting in the tagging queue (at most 2 files are tagged at a
+    # time). The table only changes when tagging starts, so ask S3.
+    if meta["status"] == "PENDING":
+        file["uploaded"] = object_exists(meta["file_url"])
+    if meta["status"] != "PENDING" or file["uploaded"]:
         file["preview_url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": BUCKET_NAME, "Key": meta["file_url"]},
             ExpiresIn=PREVIEW_URL_EXPIRES,
         )
     return file
+
+
+def object_exists(key):
+    try:
+        s3.head_object(Bucket=BUCKET_NAME, Key=key)
+        return True
+    except ClientError:  # 404 Not Found: the PUT has not happened yet
+        return False
 
 
 def response(status, body):

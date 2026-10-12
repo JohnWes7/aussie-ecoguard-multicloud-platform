@@ -252,7 +252,8 @@ Lists every file with its tags, newest first. The website's library uses it.
 ```
 
 - `PENDING` files are listed only while their upload URL is still valid (15 minutes). After that nobody can upload them, so they are abandoned reservations.
-- `FAILED` files have an `error` field. `PENDING` files have no `preview_url` because they may not be in S3 yet.
+- `FAILED` files have an `error` field.
+- `PENDING` files also have `uploaded`: `false` while the browser's `PUT` has not arrived, `true` once the file is in S3 and only waits in the tagging queue (at most 2 files are tagged at a time, so a burst of uploads waits there). The Lambda checks this with an S3 `HeadObject`, because the table only changes when tagging starts. A `preview_url` is given as soon as the file is in S3.
 - `filename` is the name sent to `/upload-url` (empty for files uploaded before it was stored). It is only for display.
 - The Lambda reads the whole table with a `Scan`, which is fine for a few hundred files. Paging would need a GSI on `created_at`.
 
@@ -327,7 +328,7 @@ It reads the endpoint from the stack outputs and uploads `tests/fixtures/smoke_c
 Open the `WebsiteHttpsURL` output (`https://aussie-ecoguard-web-<account-id>.s3.amazonaws.com/index.html`). The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. It has two independent parts that share no data:
 
 - **Upload panel** (`web/upload.js`) only talks to `POST /upload-url` and S3. For each chosen file it computes the SHA-256, reserves it, and PUTs it to S3 with a progress bar, then shows "Uploaded", "Already uploaded" (409) or the error. After an upload it fires a `files-changed` browser event that carries no data.
-- **Library** (`web/library.js`) only talks to the files API. It loads `GET /files` when the page opens, on **Refresh** and on `files-changed`, and shows one card per file: preview (image, or a video player), name, date, and the status or the tags as badges. Cards that are not `READY` or `FAILED` yet are polled with `GET /files/{sha256}` every 3 seconds (up to 15 minutes), so a new upload goes Queued → Detecting species → tags. A card is only redrawn when its status changes.
+- **Library** (`web/library.js`) only talks to the files API. It loads `GET /files` when the page opens, on **Refresh** and on `files-changed`, and shows one card per file: preview (image, or a video player), name, date, and the status or the tags as badges. Cards that are not `READY` or `FAILED` yet are polled with `GET /files/{sha256}` every 3 seconds (up to 15 minutes), so a new upload goes Uploading → Queued for tagging → Detecting species → tags. A card is only redrawn when that stage changes.
 
 Previews use the presigned URL of the original file until thumbnails exist. Each response is signed again, so redrawing a card downloads the image again.
 

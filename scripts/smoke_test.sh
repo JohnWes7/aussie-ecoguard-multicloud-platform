@@ -33,7 +33,11 @@ meta() {
 
 WORK="$(mktemp -d)"
 FILE="$WORK/smoke.jpg"
-head -c 2048 /dev/urandom > "$FILE" # random bytes, so the checksum is always new
+# A real photo (a black cat), so the model has something to find. 16 random
+# bytes after the end of the JPEG give a new checksum on every run; image
+# decoders ignore anything after the end marker.
+cp "$(dirname "$0")/../tests/fixtures/smoke_cat.jpg" "$FILE"
+head -c 16 /dev/urandom >> "$FILE"
 SHA="$(sha256sum "$FILE" | cut -d' ' -f1)"
 echo "API: $API"
 echo "Test file sha256: $SHA"
@@ -88,10 +92,10 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT -T "$WORK/other.jpg" "$U
 check "PUT different content rejected" "$STATUS" "400"
 
 # 5. Tagging: S3 event -> EventBridge -> SQS -> tagging Lambda -> Cloud Run -> DynamoDB.
-#    Usually done in about 10 s. The stub only hashes the file, so random bytes work.
-#    TODO(real model): random bytes cannot be decoded, so use a real image then.
+#    Usually done in about 10 s; up to about a minute when Cloud Run starts cold
+#    (it downloads and loads the models first), so wait up to 3 minutes.
 STATE="$(meta status.S)"
-for _ in $(seq 1 30); do
+for _ in $(seq 1 90); do
   case "$STATE" in READY | FAILED) break ;; esac
   sleep 2
   STATE="$(meta status.S)"

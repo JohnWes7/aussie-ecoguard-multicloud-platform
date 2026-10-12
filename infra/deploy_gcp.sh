@@ -5,6 +5,11 @@
 #   (uses the current gcloud project unless GCP_PROJECT is set)
 # The model files are not in the image: upload them first with ./infra/upload_model.sh.
 set -euo pipefail
+# Git Bash on Windows rewrites arguments that look like Unix paths
+# (mount-path=/models -> C:/Program Files/Git/models). Skip that for the two
+# arguments below that start with these prefixes. (Turning it off for everything
+# with MSYS_NO_PATHCONV breaks the gcloud wrapper script.) No effect elsewhere.
+export MSYS2_ARG_CONV_EXCL="volume=;MODEL_DIR="
 
 PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 # us-east4 (N. Virginia) sits next to AWS us-east-1, so the Lambda call and the S3 download stay in one metro.

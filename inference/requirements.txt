@@ -5,6 +5,8 @@ torchvision==0.29.1
 # Models (versions used in experiments/model-selection)
 speciesnet==5.0.5        # MegaDetector + SpeciesNet classifier
 open_clip_torch==3.3.0   # CLIP
+# Downloads the model files from Cloud Storage at startup
+google-cloud-storage==3.17.0
 # Web service
 fastapi>=0.115,<1
 uvicorn>=0.30

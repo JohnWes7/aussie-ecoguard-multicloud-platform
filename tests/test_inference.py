@@ -230,3 +230,37 @@ def test_docs_describe_the_infer_endpoint(client):
     schema = client.get("/openapi.json").json()
     assert "/infer" in schema["paths"]
     assert "InferRequest" in schema["components"]["schemas"]
+
+
+# ---- loading the models at startup ----
+
+def test_without_model_gcs_the_models_load_from_model_dir(main, monkeypatch):
+    monkeypatch.setattr(main, "MODEL_GCS", None)
+    monkeypatch.setattr(main, "MODEL_DIR", "/some/local/models")
+    monkeypatch.setattr(main, "Pipeline", lambda folder: ("pipeline", folder))
+    monkeypatch.setattr(main, "download_models", lambda *args: pytest.fail("should not download"))
+
+    assert main.load_pipeline() == ("pipeline", "/some/local/models")
+
+
+def test_with_model_gcs_the_models_are_downloaded_loaded_then_deleted(main, monkeypatch, tmp_path):
+    local = tmp_path / "models"
+    monkeypatch.setattr(main, "MODEL_GCS", "gs://model-bucket/v2")
+    monkeypatch.setattr(main, "LOCAL_MODEL_DIR", str(local))
+    downloads = []
+
+    def fake_download(gcs_uri, dest):
+        downloads.append((gcs_uri, dest))
+        (local / "speciesnet").mkdir(parents=True)
+        (local / "config.json").write_text("{}")
+
+    def fake_pipeline(folder):
+        assert (Path(folder) / "config.json").exists()  # loaded before the files are deleted
+        return ("pipeline", folder)
+
+    monkeypatch.setattr(main, "download_models", fake_download)
+    monkeypatch.setattr(main, "Pipeline", fake_pipeline)
+
+    assert main.load_pipeline() == ("pipeline", str(local))
+    assert downloads == [("gs://model-bucket/v2", str(local))]
+    assert not local.exists()  # /tmp is memory on Cloud Run, so the copies are removed

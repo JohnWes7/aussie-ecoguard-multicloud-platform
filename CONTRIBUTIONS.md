@@ -106,7 +106,7 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 |---|---|---|---|---|---|---|
 | D1 | Toast messages: one `showToast(message, type)` helper (Bootstrap toasts) for success / error / info | `web/toast.js` (new), `web/index.html` | ★ | Thanh Tri Le | In Progress| Demo button or console call shows all three types |
 | D2 | Use toasts for upload results and API errors instead of plain text | `web/upload.js`, `web/library.js` | ★ | — | Blocked (D1) | Screenshots of success and error |
-| D3 | Loading states: spinner while the library loads, buttons disabled while a request runs, "No files yet" empty state | `web/library.js`, `web/style.css` | ★ | — | Open | Screenshots of loading and empty states |
+| D3 | Loading states: spinner while the library loads, buttons disabled while a request runs, "No files yet" empty state | `web/library.js`, `web/style.css` | ★ |Thanh Tri Le  | Reserved | Screenshots of loading and empty states |
 | D4 | **Search by tags** tab: rows of species + minimum count (add / remove rows), builds `{"fox": 2, "cat": 1}`, shows results as a card grid | `web/search.js` (new) | ★★ | — | Open | Correct JSON sent (console log); results shown from sample data |
 | D5 | **Lost pet** form: species, colour, last N days; results newest first | `web/lostpet.js` (new) | ★★ | — | Open | Same as D4 |
 | D6 | **Thumbnail → original** form: paste a thumbnail URL, show the original | `web/search.js` | ★ | — | Open | Works against sample data |
@@ -114,11 +114,11 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 | D8 | Library: checkbox on each card, **Select all**, count of selected files | `web/library.js` | ★★ | — | Open | Selection survives the 3-second polling redraw |
 | D9 | **Edit tags** dialog for the selected files (add / remove), calls `POST /tags` | `web/library.js` or `web/edit-tags.js` (new) | ★★ | — | Blocked (D8) | Correct JSON sent; cards show the new tags |
 | D10 | **Delete** selected files with a confirmation dialog, calls `POST /delete` | `web/library.js` | ★ | — | Blocked (D8) | Confirm → cards disappear; cancel → nothing happens |
-| D11 | **Notifications** tab: choose species to subscribe to, calls `POST /subscriptions` | `web/subscribe.js` (new) | ★ | — | Open | Correct JSON sent; message about the confirmation email |
+| D11 | **Notifications** tab: choose species to subscribe to, calls `POST /subscriptions` | `web/subscribe.js` (new) | ★ |Thanh Tri Le| Reserved | Correct JSON sent; message about the confirmation email |
 | D12 | **Chat** tab: message list, input box, shows the links / thumbnails the bot returns | `web/chat.js` (new) | ★★ | — | Open | Works against sample replies |
 | D13 | File page `#/file/<sha256>` for links in notification emails (uses `GET /files/{sha256}`) | `web/file.js` (new) | ★★ | — | Open | Opening the link shows that file's preview and tags |
 | D14 | Stop previews downloading again on every redraw: move the old `<img>` / `<video>` into the new card when the file is the same | `web/library.js` | ★ | — | Open | Network tab shows one download per file |
-| D15 | Check every page on a phone-sized screen and fix layout problems | `web/style.css` | ★ | — | Open | Screenshots at 375 px wide |
+| D15 | Check every page on a phone-sized screen and fix layout problems | `web/style.css` | ★ | Thanh Tri Le | Reserved | Screenshots at 375 px wide |
 
 ### E. Chatbot (Spec §4.3)
 
@@ -135,7 +135,7 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 |---|---|---|---|---|---|---|
 | F1 | `subscribe` Lambda: email from the token, SNS `Subscribe` with a filter policy on `species` | `lambdas/subscribe/`, `tests/test_subscribe.py` (new) | ★★ | — | Open | Unit tests with moto SNS |
 | F2 | `notify` Lambda: read DynamoDB Stream records, group by file, publish one SNS message per file with the `species` attribute and a link to the file page | `lambdas/notify/`, `tests/test_notify.py` (new) | ★★ | — | Open | Unit tests: two new tags on one file → one message |
-| F3 | Email wording: subject and body text | `lambdas/notify/` | ★ | — | Open | Example email in the merge request |
+| F3 | Email wording: subject and body text | `lambdas/notify/` | ★ | Thanh Tri Le | Reserved | Example email in the merge request |
 | F4 | SNS topic, DynamoDB Stream and event filter in the template | `infra/` | ★★★ | Yijiang Luo | Blocked (F1, F2) | Adding a tag sends an email to a subscriber |
 
 ### G. Quality

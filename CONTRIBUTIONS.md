@@ -57,6 +57,10 @@ Status: **Done** · **In progress** · **Reserved** (core or integration work, Y
 | Videos (B5, B6) | One frame every 10 s through the image pipeline, highest count per species, at most 3 minutes (longer → `FAILED`); H.264 / HEVC, portrait phone videos turned upright. Test videos with sources and expected results (`experiments/test-media/`) | Yijiang Luo | 2026-10-13 | `8e03fe8`, test media in the commit after it |
 | Testing | Unit tests (pytest + moto, 149 tests), end-to-end `scripts/smoke_test.sh` (uploads a real photo, `tests/fixtures/`), `scripts/upload.sh` | Yijiang Luo | 2026-10-10 – 13 | in the commits above, `7783799` |
 | Documentation | `README.md` (deploy, API, testing, troubleshooting, model limits), `architecture/README.md` (§ 7 rewritten for the deployed model) | Yijiang Luo | 2026-10-07 – 13 | in the commits above, `95ea384` |
+| Web | D1 Toast messages: showToast(message, type) helper | tlee0177 | 2026-10-14 | `d5c62fa` |
+| Web | D3 Loading states: spinner, disabled Refresh, "No files yet" | Thanh Tri Le | 2026-10-14 | `dff1cbf` |
+| Web | D11 Notifications tab: species subscribe, POST /subscriptions | Thanh Tri Le | 2026-10-14 | `77fb330` |
+| Web | D15 Mobile layout fixes at 375 px | Thanh Tri Le | 2026-10-15 | `929af34` |
 
 ---
 
@@ -104,9 +108,10 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 
 | ID | Task | Files | Level | Owner | Status | Done when |
 |---|---|---|---|---|---|---|
-| D1 | Toast messages: one `showToast(message, type)` helper (Bootstrap toasts) for success / error / info | `web/toast.js` (new), `web/index.html` | ★ | Thanh Tri Le 2026-10-12 | In progress | Demo button or console call shows all three types |
-| D2 | Use toasts for upload results and API errors instead of plain text | `web/upload.js`, `web/library.js` | ★ | — | Blocked (D1) | Screenshots of success and error |
-| D3 | Loading states: spinner while the library loads, buttons disabled while a request runs, "No files yet" empty state | `web/library.js`, `web/style.css` | ★ |Thanh Tri Le  | Reserved | Screenshots of loading and empty states |
+| D1 | Toast messages: one `showToast(message, type)` helper (Bootstrap toasts) for success / error / info | `web/toast.js` (new), `web/index.html` | ★ | Thanh Tri Le 2026-10-12 | Done | Demo button or console call shows all three types |
+| D2 | Use toasts for upload results and API errors instead of plain text | `web/upload.js`, `web/library.js` | ★ | — | Open
+ | Screenshots of success and error |
+| D3 | Loading states: spinner while the library loads, buttons disabled while a request runs, "No files yet" empty state | `web/library.js`, `web/style.css` | ★ |Thanh Tri Le  | Done | Screenshots of loading and empty states |
 | D4 | **Search by tags** tab: rows of species + minimum count (add / remove rows), builds `{"fox": 2, "cat": 1}`, shows results as a card grid | `web/search.js` (new) | ★★ | — | Open | Correct JSON sent (console log); results shown from sample data |
 | D5 | **Lost pet** form: species, colour, last N days; results newest first | `web/lostpet.js` (new) | ★★ | — | Open | Same as D4 |
 | D6 | **Thumbnail → original** form: paste a thumbnail URL, show the original | `web/search.js` | ★ | — | Open | Works against sample data |
@@ -114,11 +119,11 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 | D8 | Library: checkbox on each card, **Select all**, count of selected files | `web/library.js` | ★★ | — | Open | Selection survives the 3-second polling redraw |
 | D9 | **Edit tags** dialog for the selected files (add / remove), calls `POST /tags` | `web/library.js` or `web/edit-tags.js` (new) | ★★ | — | Blocked (D8) | Correct JSON sent; cards show the new tags |
 | D10 | **Delete** selected files with a confirmation dialog, calls `POST /delete` | `web/library.js` | ★ | — | Blocked (D8) | Confirm → cards disappear; cancel → nothing happens |
-| D11 | **Notifications** tab: choose species to subscribe to, calls `POST /subscriptions` | `web/subscribe.js` (new) | ★ |Thanh Tri Le| Reserved | Correct JSON sent; message about the confirmation email |
+| D11 | **Notifications** tab: choose species to subscribe to, calls `POST /subscriptions` | `web/subscribe.js` (new) | ★ |Thanh Tri Le| Done | Correct JSON sent; message about the confirmation email |
 | D12 | **Chat** tab: message list, input box, shows the links / thumbnails the bot returns | `web/chat.js` (new) | ★★ | — | Open | Works against sample replies |
 | D13 | File page `#/file/<sha256>` for links in notification emails (uses `GET /files/{sha256}`) | `web/file.js` (new) | ★★ | — | Open | Opening the link shows that file's preview and tags |
 | D14 | Stop previews downloading again on every redraw: move the old `<img>` / `<video>` into the new card when the file is the same | `web/library.js` | ★ | — | Open | Network tab shows one download per file |
-| D15 | Check every page on a phone-sized screen and fix layout problems | `web/style.css` | ★ | Thanh Tri Le | Reserved | Screenshots at 375 px wide |
+| D15 | Check every page on a phone-sized screen and fix layout problems | `web/style.css` | ★ | Thanh Tri Le | Done | Screenshots at 375 px wide |
 
 ### E. Chatbot (Spec §4.3)
 
@@ -166,6 +171,7 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-15 | Thanh Tri Le | D1, D3, D11, D15 merged; D2 unblocked. D11 needs F1 (subscribe Lambda) live to work end to end |
 | 2026-10-14 | Yijiang Luo | Terraform split into `infra/terraform/aws/` (everyone deploys their own) and `infra/terraform/gcp/` (one shared inference service hosted by Yijiang), because not everyone has a GCP account. Teammates only need AWS: see README § Deploy |
 | 2026-10-14 | Yijiang Luo | GCP (Cloud Run, model bucket, image build) also in Terraform; `deploy_gcp.sh` removed. Everyone deploys their own AWS + GCP: see README § Deploy → First time, and send Yijiang your Google account for `model_readers` |
 | 2026-10-14 | Yijiang Luo | AWS deployment moved from CloudFormation to Terraform (`infra/terraform/`, see README § Deploy); `template.yaml` and `deploy_aws.sh` removed |

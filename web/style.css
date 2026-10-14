@@ -14,3 +14,10 @@
   color: #adb5bd;
   font-size: 0.875rem;
 }
+
+/* Loading spinner and "No files yet" (library.js) span the whole grid row.
+   The id beats Bootstrap's row-cols-* widths. */
+#library > .library-state {
+  flex: 0 0 100%;
+  width: 100%;
+}

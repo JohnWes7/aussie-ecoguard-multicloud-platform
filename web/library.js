@@ -10,25 +10,72 @@ const FINISHED = ["READY", "FAILED"];
 const grid = document.getElementById("library");
 const fileCount = document.getElementById("file-count");
 const libraryError = document.getElementById("library-error");
+const refreshButton = document.getElementById("refresh");
 const polling = new Set(); // file_ids with a poll loop running
+let loading = false; // a GET /files is running
+let reloadWanted = false; // "files-changed" arrived during it: load once more afterwards
 
-document.getElementById("refresh").addEventListener("click", loadFiles);
+refreshButton.addEventListener("click", loadFiles);
 document.addEventListener("files-changed", loadFiles);
 if (window.CONFIG) loadFiles();
 
 async function loadFiles() {
+  if (loading) { // one request at a time; an upload that finished meanwhile still shows up
+    reloadWanted = true;
+    return;
+  }
+  loading = true;
+  setLoading(true);
   try {
     const response = await fetch(`${window.CONFIG.apiUrl}/files`);
     if (!response.ok) throw new Error(`GET /files returned ${response.status}`);
     const { files } = await response.json();
     libraryError.hidden = true;
-    grid.replaceChildren(...files.map(renderCard));
+    grid.replaceChildren(...(files.length ? files.map(renderCard) : [emptyState()]));
     fileCount.textContent = files.length;
     files.filter((f) => !FINISHED.includes(f.status)).forEach((f) => poll(f.file_id));
   } catch (err) {
     libraryError.textContent = `Could not load the library: ${err.message}`;
     libraryError.hidden = false;
+    grid.querySelector(".library-loading")?.remove(); // keep old cards, drop the spinner
+  } finally {
+    loading = false;
+    setLoading(false);
+    if (reloadWanted) {
+      reloadWanted = false;
+      loadFiles();
+    }
   }
+}
+
+// While GET /files runs: Refresh is disabled with a small spinner, and the
+// grid shows a big spinner if it has no cards yet. On Refresh the old cards
+// stay until the new list arrives, so the page does not jump.
+function setLoading(on) {
+  refreshButton.disabled = on;
+  refreshButton.replaceChildren(...(on ? [spinner("spinner-border-sm me-1")] : []), "Refresh");
+  grid.setAttribute("aria-busy", on);
+  if (on && !grid.querySelector("[data-file-id]")) {
+    const box = el("div", "library-state library-loading text-center py-5");
+    box.setAttribute("role", "status");
+    box.append(spinner("text-secondary"), el("p", "small text-body-secondary mt-2 mb-0", "Loading files..."));
+    grid.replaceChildren(box);
+  }
+}
+
+function spinner(className) {
+  const node = el("span", `spinner-border ${className}`);
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+
+function emptyState() {
+  const box = el("div", "library-state text-center text-body-secondary py-5");
+  box.append(
+    el("p", "h6 mb-1", "No files yet"),
+    el("p", "small mb-0", "Upload a photo or video above and it will appear here."),
+  );
+  return box;
 }
 
 async function poll(fileId) {
@@ -42,6 +89,9 @@ async function poll(fileId) {
       const card = grid.querySelector(`[data-file-id="${fileId}"]`);
       if (response.status === 404) { // e.g. an abandoned reservation that TTL removed
         card?.remove();
+        const left = grid.querySelectorAll("[data-file-id]").length;
+        fileCount.textContent = left;
+        if (left === 0) grid.replaceChildren(emptyState());
         return;
       }
       if (!response.ok) continue; // try again on the next round

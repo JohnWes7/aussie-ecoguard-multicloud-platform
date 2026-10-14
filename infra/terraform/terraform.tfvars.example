@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars (git-ignored) and fill in your own values.
+
+# Your GCP project ID (gcloud config get-value project). Billing must be enabled.
+gcp_project_id = "my-project-id"
+
+# Teammates: copy the models from Yijiang's bucket instead of downloading them.
+# Leave this out if you upload the models yourself with infra/upload_model.sh.
+model_source = "gs://aussie-ecoguard-models-87185953953"
+
+# Model version folder the service loads (default "v2").
+# model_version = "v2"
+
+# Bucket owner only: Google accounts allowed to read your model bucket.
+# model_readers = ["teammate@gmail.com"]

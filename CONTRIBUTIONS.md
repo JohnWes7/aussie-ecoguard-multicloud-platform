@@ -17,7 +17,7 @@ Deadline: **2026-11-02 23:55** (code, team report, individual reports), then the
 Rules that keep `main` working:
 
 - Run `pytest tests/` before opening a merge request if you changed anything under `lambdas/`. A new Lambda needs its own `tests/test_<name>.py` (see [README.md § Unit tests](README.md#unit-tests)).
-- Only change the files listed for your task. `infra/terraform/`, `infra/deploy_gcp.sh` and the existing Lambdas are wired together; changes there go through Yijiang, so ask in the group chat if your task needs one.
+- Only change the files listed for your task. `infra/terraform/`, `infra/upload_model.sh` and the existing Lambdas are wired together; changes there go through Yijiang, so ask in the group chat if your task needs one.
 - APIs that do not exist yet: build against the request/response format in [architecture/README.md § 5](architecture/README.md#5-core-features-spec-4-requirement-by-requirement) and use a hard-coded sample response until the real endpoint is deployed.
 - Never commit AWS or GCP credentials, `web/config.js` or account IDs.
 
@@ -166,6 +166,7 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-14 | Yijiang Luo | GCP (Cloud Run, model bucket, image build) also in Terraform; `deploy_gcp.sh` removed. Everyone deploys their own AWS + GCP: see README § Deploy → First time, and send Yijiang your Google account for `model_readers` |
 | 2026-10-14 | Yijiang Luo | AWS deployment moved from CloudFormation to Terraform (`infra/terraform/`, see README § Deploy); `template.yaml` and `deploy_aws.sh` removed |
 | 2026-10-13 | Yijiang Luo | B4 (real model), B5 (videos) and B6 (test videos) done; C6 unblocked |
 | 2026-10-11 | Yijiang Luo | Created this file with the work done so far and the open tasks |

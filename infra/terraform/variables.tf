@@ -1,16 +1,6 @@
-# Base URL of the Cloud Run inference service, e.g. https://<service>-<hash>.a.run.app
-# Set in terraform.tfvars.
-variable "inference_url" {
-  type        = string
-  description = "Cloud Run inference service base URL"
+# Set these in terraform.tfvars (git-ignored); terraform.tfvars.example lists them.
 
-  validation {
-    condition     = can(regex("^https://[^/]+$", var.inference_url))
-    error_message = "inference_url must be an https:// base URL with no path or trailing slash."
-  }
-}
-
-# Your own GCP project (with billing enabled). Set in terraform.tfvars.
+# Your own GCP project (with billing enabled).
 variable "gcp_project_id" {
   type        = string
   description = "GCP project for Cloud Run and the model bucket"
@@ -28,4 +18,24 @@ variable "gcp_region" {
 variable "model_version" {
   type    = string
   default = "v2"
+}
+
+# A teammate's model bucket to copy model_version from, e.g.
+# "gs://aussie-ecoguard-models-123456789012". Leave empty if you upload the
+# models yourself with infra/upload_model.sh.
+variable "model_source" {
+  type    = string
+  default = ""
+
+  validation {
+    condition     = var.model_source == "" || can(regex("^gs://[^/]+$", var.model_source))
+    error_message = "model_source must be empty or gs://<bucket> with no folder or trailing slash."
+  }
+}
+
+# Google accounts (emails) allowed to read your model bucket, so they can use
+# it as their model_source.
+variable "model_readers" {
+  type    = list(string)
+  default = []
 }

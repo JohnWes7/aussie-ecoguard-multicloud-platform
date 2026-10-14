@@ -15,5 +15,5 @@ COPY main.py model.py ./
 
 # Cloud Run sends requests to $PORT (8080 by default).
 # One uvicorn process; FastAPI runs the plain-def endpoints in its thread pool.
-# Request timeouts are left to Cloud Run (--timeout in deploy_gcp.sh).
+# Request timeouts are left to Cloud Run (timeout in infra/terraform/gcp.tf).
 CMD exec uvicorn main:app --host 0.0.0.0 --port $PORT

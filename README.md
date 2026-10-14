@@ -39,8 +39,7 @@ Known limits of the deployed model:
 ```
 architecture/        Architecture doc and diagram (edit the .drawio, then export the .png)
 infra/
-  terraform/         Terraform for every AWS resource (one .tf file per area, see below)
-  deploy_gcp.sh      Builds and deploys the inference service to Cloud Run
+  terraform/         Terraform for every AWS and GCP resource (one .tf file per area, see below)
   upload_model.sh    Uploads one model version (weights + config) to Cloud Storage
   fetch_models.py    Downloads the model weights into models/ (used by upload_model.sh)
   model/config.json  Model settings: thresholds, species list, mapping rules, CLIP labels
@@ -68,13 +67,14 @@ scripts/
 ## Prerequisites
 
 - AWS CLI v2
+- gcloud CLI
 - Terraform 1.5 or newer
 - Python 3.10 or newer
 - A bash shell. On Windows use **Git Bash**, not PowerShell (see [Troubleshooting](#troubleshooting))
 - An AWS Academy Learner Lab
-- For the inference service: the gcloud CLI, logged in to a GCP project with billing enabled
+- A GCP project with billing enabled (Cloud Run scales to zero, so it stays within the free tier for testing)
 
-Each Learner Lab is a separate AWS account, so each of us deploys our own copy. Resource names that must be globally unique include the account ID, so the same Terraform code works in every account. Each of us also has our own Terraform state (`infra/terraform/terraform.tfstate`, git-ignored): it records what Terraform created in *your* account, so do not share or commit it.
+Each of us deploys our own complete copy: AWS in our own Learner Lab, GCP in our own project. Resource names that must be globally unique include the account ID or project number, so the same Terraform code works for everyone. Each of us also has our own Terraform state (`infra/terraform/terraform.tfstate`, git-ignored): it records what Terraform created in *your* accounts, so do not share or commit it.
 
 ## Learner Lab credentials
 
@@ -92,25 +92,38 @@ Stopping the lab does not delete the resources. Only the credentials change. Aft
 
 ## Deploy
 
-Deploy the [inference service](#inference-service-gcp-cloud-run) first: the tagging Lambda needs its URL.
+Everything (AWS, GCP and the website) is defined in `infra/terraform/` and deployed with one command.
 
-### AWS (Terraform)
+### First time
 
-One time, from the repository root:
+1. Log in to AWS (see [Learner Lab credentials](#learner-lab-credentials)) and to GCP:
 
-```bash
-terraform -chdir=infra/terraform init
-```
+   ```bash
+   gcloud auth login                         # for the gcloud commands Terraform runs
+   gcloud auth application-default login     # for Terraform's google provider
+   gcloud config set project <project-id>
+   ```
 
-Create `infra/terraform/terraform.tfvars` (git-ignored) with your Cloud Run URL:
+2. Create your variables file and fill in your project ID:
 
-```hcl
-inference_url = "https://aussie-ecoguard-inference-xxxxxxxxxx-uk.a.run.app"
-```
+   ```bash
+   cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+   ```
 
-(`gcloud run services describe aussie-ecoguard-inference --region us-east4 --format 'value(status.url)'` prints it.)
+   The example sets `model_source` to Yijiang's model bucket, so Terraform copies the models (~1.1 GB) from there instead of downloading them again. Before your first `apply`, ask Yijiang to add your Google account to `model_readers` in his `terraform.tfvars` and run `apply`; that gives you read access to his bucket.
 
-Then, to create everything the first time and after every change:
+3. Deploy:
+
+   ```bash
+   terraform -chdir=infra/terraform init
+   terraform -chdir=infra/terraform apply
+   ```
+
+   The first `apply` takes about 10 minutes, mostly Cloud Build building the inference image.
+
+4. Run `./scripts/smoke_test.sh` (see [Smoke test](#smoke-test)).
+
+### After a change
 
 ```bash
 terraform -chdir=infra/terraform apply
@@ -122,80 +135,67 @@ Terraform shows the plan (what it will create, change or delete) and asks for `y
 - Publishes the REST API to the `api` stage whenever `api.tf` or its routes change (`triggers` on `aws_api_gateway_deployment`).
 - Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)): the config says `enabled = true`, so Terraform puts it back.
 - Uploads `web/` to the website bucket with `Cache-Control: no-cache` (a reload always picks up the new version), plus a generated `config.js` with this deployment's API URL. A file deleted from `web/` is deleted from the bucket.
+- Builds a new inference image when anything in `inference/` changed (5–10 minutes) and deploys it to Cloud Run. The image tag is a hash of those files, so an unchanged `inference/` is never rebuilt.
+- Copies `model_version` from `model_source` into your model bucket if it is not there yet.
+- Passes the Cloud Run URL to the `tagging` Lambda.
 
-Print the URLs again at any time with `terraform -chdir=infra/terraform output` (e.g. `website_https_url`, `upload_url_endpoint`). Run `terraform -chdir=infra/terraform plan` to see what would change without changing anything.
+Print the URLs again at any time with `terraform -chdir=infra/terraform output` (e.g. `website_https_url`, `upload_url_endpoint`). Run `terraform -chdir=infra/terraform plan` to see what would change without changing anything; right after an `apply` it should say `No changes`.
 
-The files in `infra/terraform/`:
+### Files
 
 | File | What it defines |
 |---|---|
 | `versions.tf` | Terraform and provider versions, AWS region, default tags, `LabRole` |
-| `variables.tf` | `inference_url` (set in `terraform.tfvars`) |
+| `variables.tf` | `gcp_project_id`, `gcp_region`, `model_version`, `model_source`, `model_readers` |
+| `terraform.tfvars.example` | Template for your `terraform.tfvars` (git-ignored) |
 | `storage.tf` | Media and website buckets, DynamoDB table |
 | `tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
 | `api.tf` | REST API routes and the `upload-url` and `files` Lambdas |
 | `website.tf` | Uploads `web/` and `config.js` |
+| `gcp.tf` | Model bucket, image repository and build, Cloud Run service, GCP APIs and permissions |
 | `outputs.tf` | URLs and names printed after `apply`, read by the scripts |
 
-Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that Terraform's `aws_s3_bucket` needs on every read, so the two buckets are created and deleted with the aws CLI (`terraform_data` in `storage.tf`, the same workaround as the Week 11 lab). Their settings (CORS, events, website, policy) are normal Terraform resources. As a result, Terraform does not notice if a bucket is deleted by hand; `terraform apply -replace=terraform_data.media_bucket` creates it again.
+Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that Terraform's `aws_s3_bucket` needs on every read, so the two S3 buckets are created and deleted with the aws CLI (`terraform_data` in `storage.tf`, the same workaround as the Week 11 lab). Their settings (CORS, events, website, policy) are normal Terraform resources. As a result, Terraform does not notice if a bucket is deleted by hand; `terraform apply -replace=terraform_data.media_bucket` creates it again.
 
-What Terraform creates:
+### What Terraform creates
 
-| Resource | Name |
-|---|---|
-| Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
-| Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `website_https_url` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
-| DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
-| Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files` (role: `LabRole`) |
-| REST API | `aussie-ecoguard-api`, stage `api` |
-| EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
-| SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
+| Cloud | Resource | Name |
+|---|---|---|
+| AWS | Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
+| AWS | Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `website_https_url` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
+| AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
+| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files` (role: `LabRole`) |
+| AWS | REST API | `aussie-ecoguard-api`, stage `api` |
+| AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
+| AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
+| GCP | Cloud Run service | `aussie-ecoguard-inference` in `us-east4` (next to AWS `us-east-1`), public |
+| GCP | Model bucket (private) | `aussie-ecoguard-models-<project-number>`, one folder per model version |
+| GCP | Image repository | Artifact Registry `aussie-ecoguard`; keeps the 2 newest images (each ~0.7 GB; the free tier is 0.5 GB) |
 
-Your account also contains a CloudFormation stack with a long random name. Learner Lab created it, so leave it alone.
+Your AWS account also contains a CloudFormation stack with a long random name. Learner Lab created it, so leave it alone.
 
 ### Inference service (GCP Cloud Run)
 
-The model files (~1.1 GB) are not in the image. They live in a Cloud Storage bucket, one folder per model version, and the service downloads its version at startup. Upload a version first, then deploy:
-
-```bash
-gcloud auth login                       # first time only
-gcloud config set project <project-id>  # first time only
-
-# 1. Model files -> gs://aussie-ecoguard-models-<project-number>/v1/
-#    Needs Python with inference/requirements.txt installed (see "Run the
-#    inference service locally"), because it runs infra/fetch_models.py first.
-PYTHON=.venv-inference/Scripts/python ./infra/upload_model.sh v1
-
-# 2. Build and deploy the service, pointing it at that version
-MODEL_VERSION=v1 ./infra/deploy_gcp.sh
-```
-
-`upload_model.sh` creates the bucket if needed (`us-east4`, not public), gives the Cloud Run service account read access to that bucket only, and refuses to overwrite an existing version.
-
-`gcloud run deploy --source inference` uploads the folder and Cloud Build builds the image from `inference/Dockerfile`, so Docker is not needed locally (a build takes 5–10 minutes). The script prints the service URL at the end. The service is `aussie-ecoguard-inference` in `us-east4`, next to AWS `us-east-1`. It has 4 CPUs and 8 GiB, handles one image at a time per instance, scales to zero when idle and is capped at 2 instances.
+The service has 4 CPUs and 8 GiB, handles one image at a time per instance, scales to zero when idle and is capped at 2 instances. The model files (~1.1 GB) are not in the image: they live in the model bucket, one folder per version, and the service downloads its version (`MODEL_GCS`) at startup.
 
 A new instance needs about a minute before it answers (download ~17 s, then loading the models), so the first upload after about 15 idle minutes takes about a minute; after that, inference takes 4–15 s per image and a few seconds per checked video frame. The `tagging` Lambda waits up to 300 s for an answer (a cold start plus a 3-minute video).
 
-**Changing the model** needs no code change and no new image. Every revision keeps the version it started with, so a version is never edited in place:
+**Changing the model** needs no code change and no new image. Every revision keeps the version it started with, so a version is never edited in place. Make a new version folder, then point the service at it:
 
 ```bash
 B=gs://aussie-ecoguard-models-<project-number>
-gcloud storage cp -r "$B/v1" "$B/v2"                   # copy inside Cloud Storage
-gcloud storage cp my-config.json "$B/v2/config.json"   # or new weights
-gcloud run services update aussie-ecoguard-inference --region us-east4 \
-  --update-env-vars MODEL_GCS=$B/v2                    # new revision with v2
+gcloud storage cp -r "$B/v2" "$B/v3"                   # copy inside Cloud Storage
+gcloud storage cp my-config.json "$B/v3/config.json"   # or new weights
 ```
 
-If the new revision fails to start, traffic stays on the old one. To go back later, run the same `update` with `MODEL_GCS=$B/v1`. (`gcloud run services update-traffic --to-revisions <old-revision>=100` also works and is instant, but it pins traffic to that revision: later deploys get no traffic until `update-traffic --to-latest`.) `/health` shows the `model_label` from the loaded `config.json`. `deploy_gcp.sh` sets the version again, so after switching to `v2` deploy with `MODEL_VERSION=v2 ./infra/deploy_gcp.sh`, otherwise it goes back to `v1`.
+or build one from scratch with `infra/upload_model.sh v3` (it runs `infra/fetch_models.py`, so it needs Python with `inference/requirements.txt` installed, see [Run the inference service locally](#run-the-inference-service-locally); it refuses to overwrite an existing version). Then set `model_version = "v3"` in `terraform.tfvars` and run `apply`, which deploys a new revision. If it fails to start, traffic stays on the old one. To go back, set the old version again and `apply`. `/health` shows the `model_label` from the loaded `config.json`. Teammates who copy from your bucket get the new version when they change their `model_version` too.
 
-If the first deploy fails with `...-compute@developer.gserviceaccount.com does not have storage.objects.get access`, grant the Compute Engine default service account (which Cloud Build runs as) the Cloud Run Builder role, then deploy again:
+**Starting from an empty project without a `model_source`** (only if Yijiang's bucket is gone): Cloud Run cannot start before its model version exists, so create the bucket first, upload, then deploy the rest:
 
 ```bash
-PROJECT=$(gcloud config get-value project)
-NUMBER=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
-gcloud projects add-iam-policy-binding "$PROJECT" \
-  --member="serviceAccount:$NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/run.builder"
+terraform -chdir=infra/terraform apply -target=google_storage_bucket_iam_member.models_reader
+PYTHON=.venv-inference/Scripts/python ./infra/upload_model.sh v2
+terraform -chdir=infra/terraform apply
 ```
 
 ## API
@@ -373,7 +373,7 @@ Uploads the file the same way the website does, waits for tagging and prints the
 ### Manual test of the inference service
 
 ```bash
-SVC=<service URL printed by deploy_gcp.sh>
+SVC=$(gcloud run services describe aussie-ecoguard-inference --region us-east4 --format 'value(status.url)')
 curl "$SVC/health"
 URL=$(aws s3 presign "s3://aussie-ecoguard-media-<account-id>/uploads/<sha256>" --expires-in 300)
 curl -X POST "$SVC/infer" -H "Content-Type: application/json" \
@@ -422,14 +422,14 @@ You can also invoke the function in the Lambda console (**Test** tab) with this 
 
 ```bash
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-aws s3 rm "s3://aussie-ecoguard-media-$ACCOUNT_ID" --recursive    # destroy refuses to delete user media
-terraform -chdir=infra/terraform destroy
-
-gcloud run services delete aussie-ecoguard-inference --region us-east4
-gcloud artifacts repositories delete cloud-run-source-deploy --location us-east4    # images built by --source
 NUMBER=$(gcloud projects describe "$(gcloud config get-value project)" --format='value(projectNumber)')
-gcloud storage rm --recursive "gs://aussie-ecoguard-models-$NUMBER"    # model bucket and all versions
+# destroy refuses to delete buckets that still hold user media or models
+aws s3 rm "s3://aussie-ecoguard-media-$ACCOUNT_ID" --recursive
+gcloud storage rm "gs://aussie-ecoguard-models-$NUMBER/**"
+terraform -chdir=infra/terraform destroy
 ```
+
+The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in the project may use them.
 
 ## Troubleshooting
 
@@ -442,13 +442,15 @@ gcloud storage rm --recursive "gs://aussie-ecoguard-models-$NUMBER"    # model b
 | A file stays `PROCESSING` | The `tagging` Lambda crashed or timed out on every delivery and the message is in the dead-letter queue. Check the logs, fix the cause, then SQS console → `aussie-ecoguard-tagging-dlq` → **Start DLQ redrive** to send it back; tagging continues from `PROCESSING` |
 | Website says "must be opened over HTTPS" or "config.js is missing" | Open the `website_https_url` output, not the `http://...s3-website...` address. For a local copy, create `web/config.js` (see [Website](#website)) |
 | Website upload fails with `Failed to fetch` or `Network error` | Usually CORS: the page's address must be one of the media bucket's allowed origins (the two website addresses or `http://localhost:8000`). The browser console (F12) shows the blocked request |
-| `terraform apply` asks for `var.inference_url` | `infra/terraform/terraform.tfvars` is missing. Create it (see [Deploy](#aws-terraform)) |
+| `terraform apply` asks for `var.gcp_project_id` | `infra/terraform/terraform.tfvars` is missing. Create it (see [Deploy](#first-time)) |
+| `terraform apply` fails at `terraform_data.model_copy` with 403 / `storage.objects.list` | You cannot read `model_source` yet. Ask the bucket owner to add your Google account to `model_readers` and `apply`. Check with `gcloud storage ls <model_source>/` |
+| Terraform says `could not find default credentials` for google | Run `gcloud auth application-default login` |
 | `terraform apply` fails with `reading S3 Bucket ... object lock configuration ... explicit deny in a service control policy` | Someone used `aws_s3_bucket`. Learner Lab blocks a permission it needs; create buckets with `terraform_data` as in `storage.tf` |
 | Scripts print `No outputs found`, or `apply` fails because the resources already exist | The Terraform state is on another machine or was deleted. Each person deploys and tests from the machine that holds their `terraform.tfstate` |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | The first upload after a quiet period takes about a minute | Cloud Run scaled to zero, and a new instance downloads and loads the models first (`Downloaded ... in` and `Loaded models in` in its logs). Later uploads are fast. `--min-instances 1` would avoid it but is billed all the time |
 | A new Cloud Run revision does not start; its logs show `no model files under gs://...` or a 403 from Cloud Storage | The version folder does not exist (run `./infra/upload_model.sh <version>`), or the service account lost read access to the model bucket (running `upload_model.sh` again adds it back) |
-| First `deploy_gcp.sh` fails with `storage.objects.get` denied | Grant the Compute Engine default service account `roles/run.builder` (see [Inference service](#inference-service-gcp-cloud-run)) |
+| The image build fails with `storage.objects.get` denied | Cloud Build runs as the Compute Engine default service account, which needs `roles/run.builder`. Terraform grants it (`gcp.tf`), but a new grant can take a minute to apply; run `apply` again |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET` on `/upload-url`, a typo, or a missing `/api` stage. Right after a deploy that **adds** a route, the new route can answer 403 for about a minute until every API Gateway node has the new deployment; the smoke test can fail in that window, so run it again |
 | `PUT` returns 403 `SignatureDoesNotMatch` | The URL was not copied completely, or the headers differ from the ones returned |
 | `PUT` returns 400 `BadDigest` | The file content does not match the SHA-256 that was reserved |

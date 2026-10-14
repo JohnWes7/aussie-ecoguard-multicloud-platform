@@ -7,10 +7,6 @@ locals {
   # Cloud Run runs as the Compute Engine default service account unless told
   # otherwise, and Cloud Build builds as it too.
   run_service_account = "${local.gcp_project_number}-compute@developer.gserviceaccount.com"
-
-  # TODO(step 2b): Terraform builds the image. Until then, the image that
-  # deploy_gcp.sh last deployed.
-  inference_image = "us-east4-docker.pkg.dev/${var.gcp_project_id}/cloud-run-source-deploy/aussie-ecoguard-inference@sha256:84eb24b52c123c10181690e483aac8c2e77580e3a8e5f493189baeb470259622"
 }
 
 # APIs a new project needs. disable_on_destroy = false: destroy leaves them on,
@@ -38,7 +34,8 @@ resource "google_project_iam_member" "run_builder" {
 # ---------- Model bucket ----------
 
 # One folder per model version (config.json + weights, ~1.1 GB), uploaded by
-# infra/upload_model.sh. The service downloads its version at startup.
+# infra/upload_model.sh or copied from a teammate's bucket (model_copy below).
+# The service downloads its version at startup.
 resource "google_storage_bucket" "models" {
   name                        = "aussie-ecoguard-models-${local.gcp_project_number}"
   location                    = upper(var.gcp_region)
@@ -55,6 +52,96 @@ resource "google_storage_bucket_iam_member" "models_reader" {
   bucket = google_storage_bucket.models.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${local.run_service_account}"
+}
+
+# Teammates (Google accounts in model_readers) may read this bucket, so their
+# Terraform can copy the models from it instead of downloading them again.
+resource "google_storage_bucket_iam_member" "model_readers" {
+  for_each = toset(var.model_readers)
+
+  bucket = google_storage_bucket.models.name
+  role   = "roles/storage.objectViewer"
+  member = "user:${each.value}"
+}
+
+# Only when model_source is set (a teammate's project): copy the model version
+# from that bucket into this one before Cloud Run starts, as the service
+# reads it at startup. The copy runs inside Google Cloud (same region, so no
+# transfer cost) and is repeated when model_version changes. rsync skips
+# files that are already there.
+resource "terraform_data" "model_copy" {
+  count = var.model_source == "" ? 0 : 1
+
+  triggers_replace = [var.model_source, var.model_version]
+
+  provisioner "local-exec" {
+    command = "gcloud storage rsync ${var.model_source}/${var.model_version} gs://${google_storage_bucket.models.name}/${var.model_version} --recursive"
+  }
+}
+
+# ---------- Container image ----------
+
+# Holds the inference images. Images take ~0.7 GB each and the free tier is
+# 0.5 GB, so only the 2 newest are kept (the running one and the one before,
+# for a rollback). KEEP wins over DELETE, so this deletes everything else.
+# The cleanup job runs about once a day.
+resource "google_artifact_registry_repository" "images" {
+  repository_id = "aussie-ecoguard"
+  location      = var.gcp_region
+  format        = "DOCKER"
+
+  cleanup_policy_dry_run = false
+
+  cleanup_policies {
+    id     = "keep-2-newest"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 2
+    }
+  }
+
+  cleanup_policies {
+    id     = "delete-the-rest"
+    action = "DELETE"
+    condition {
+      tag_state = "ANY"
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+locals {
+  inference_dir = "${path.module}/../../inference"
+
+  # The files Cloud Build receives (the same ones .gcloudignore lets through).
+  inference_files = sort([
+    for f in fileset(local.inference_dir, "**") : f
+    if !strcontains(f, "__pycache__") && !endswith(f, ".pyc")
+  ])
+
+  # The image tag is a hash of those files: it changes when the code, the
+  # Dockerfile or requirements.txt changes, and only then.
+  inference_hash = substr(sha1(join("\n", [
+    for f in local.inference_files : "${f} ${filesha1("${local.inference_dir}/${f}")}"
+  ])), 0, 12)
+
+  inference_image = "${var.gcp_region}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.images.repository_id}/inference:${local.inference_hash}"
+}
+
+# Cloud Build builds inference/Dockerfile in the cloud (no local Docker) and
+# pushes the image; a build takes 5-10 minutes. A new tag (= changed files)
+# replaces this resource, which runs the build again.
+# No shell operators: local-exec runs cmd.exe on Windows and sh elsewhere.
+resource "terraform_data" "inference_image" {
+  input            = local.inference_image
+  triggers_replace = local.inference_image
+
+  provisioner "local-exec" {
+    command = "gcloud builds submit ${local.inference_dir} --tag ${self.input} --project ${var.gcp_project_id} --region ${var.gcp_region} --quiet"
+  }
+
+  depends_on = [google_project_iam_member.run_builder]
 }
 
 # ---------- Cloud Run service ----------
@@ -83,7 +170,8 @@ resource "google_cloud_run_v2_service" "inference" {
     }
 
     containers {
-      image = local.inference_image
+      # .output (not the local) so the service waits for the build.
+      image = terraform_data.inference_image.output
 
       # The models need about 3 GB at peak, plus ~1.1 GB while the downloaded
       # files sit in /tmp (memory on Cloud Run), so 8Gi. 4 CPUs: inference
@@ -119,6 +207,7 @@ resource "google_cloud_run_v2_service" "inference" {
   depends_on = [
     google_project_service.apis,
     google_storage_bucket_iam_member.models_reader,
+    terraform_data.model_copy,
   ]
 }
 

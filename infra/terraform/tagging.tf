@@ -87,9 +87,9 @@ resource "aws_lambda_function" "tagging" {
     variables = {
       TABLE_NAME    = aws_dynamodb_table.media.name
       BUCKET_NAME   = terraform_data.media_bucket.output
-      INFERENCE_URL = var.inference_url
+      INFERENCE_URL = google_cloud_run_v2_service.inference.uri
       MAX_ATTEMPTS  = "3"   # must stay below the queue's maxReceiveCount
-      INFER_TIMEOUT = "300" # = Cloud Run --timeout; a cold start (~1 min) plus a 3-minute video (18 frames)
+      INFER_TIMEOUT = "300" # = Cloud Run timeout (gcp.tf); a cold start (~1 min) plus a 3-minute video (18 frames)
     }
   }
 }

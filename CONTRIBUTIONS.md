@@ -68,8 +68,8 @@ Each table covers one area of the spec. **Done when** is what the merge request 
 
 | ID | Task | Files | Level | Owner | Status | Done when |
 |---|---|---|---|---|---|---|
-| A1 | Cognito User Pool + Hosted UI (email, first name, last name, verification email) | `infra/terraform/` (new `cognito.tf`) | ★★★ | Yijiang Luo | Reserved | Sign-up sends a verification email; sign-in returns a token |
-| A2 | Cognito authorizer on every API route, `OPTIONS` routes for CORS | `infra/terraform/api.tf` | ★★★ | Yijiang Luo | Reserved | Requests without a token get 401 |
+| A1 | Cognito User Pool + Hosted UI (email, first name, last name, verification email) | `infra/terraform/aws/` (new `cognito.tf`) | ★★★ | Yijiang Luo | Reserved | Sign-up sends a verification email; sign-in returns a token |
+| A2 | Cognito authorizer on every API route, `OPTIONS` routes for CORS | `infra/terraform/aws/api.tf` | ★★★ | Yijiang Luo | Reserved | Requests without a token get 401 |
 | A3 | `web/auth.js`: read the token after Hosted UI sign-in, `getToken()`, `signOut()`, redirect to sign-in when there is no valid token | `web/auth.js` (new) | ★★ | — | Open | Works in a local page with a token pasted in by hand; expired token redirects |
 | A4 | Navbar: show the signed-in user's email and a **Sign out** button | `web/index.html`, `web/auth.js` | ★ | — | Blocked (A3) | Screenshot signed in and after sign-out |
 | A5 | Send the token with every API call from the website | `web/upload.js`, `web/library.js` | ★★ | Yijiang Luo | Reserved | Smoke test passes with auth on |
@@ -166,6 +166,7 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-14 | Yijiang Luo | Terraform split into `infra/terraform/aws/` (everyone deploys their own) and `infra/terraform/gcp/` (one shared inference service hosted by Yijiang), because not everyone has a GCP account. Teammates only need AWS: see README § Deploy |
 | 2026-10-14 | Yijiang Luo | GCP (Cloud Run, model bucket, image build) also in Terraform; `deploy_gcp.sh` removed. Everyone deploys their own AWS + GCP: see README § Deploy → First time, and send Yijiang your Google account for `model_readers` |
 | 2026-10-14 | Yijiang Luo | AWS deployment moved from CloudFormation to Terraform (`infra/terraform/`, see README § Deploy); `template.yaml` and `deploy_aws.sh` removed |
 | 2026-10-13 | Yijiang Luo | B4 (real model), B5 (videos) and B6 (test videos) done; C6 unblocked |

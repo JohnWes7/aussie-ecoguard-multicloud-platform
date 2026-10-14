@@ -9,9 +9,9 @@ export AWS_PAGER=""
 FILE="${1:?usage: ./scripts/upload.sh <file>}"
 REGION="${AWS_REGION:-us-east-1}"
 
-# output <name>: one value from infra/terraform/outputs.tf (read from the local state).
+# output <name>: one value from infra/terraform/aws/outputs.tf (read from the local state).
 output() {
-  terraform -chdir="$(dirname "$0")/../infra/terraform" output -raw "$1"
+  terraform -chdir="$(dirname "$0")/../infra/terraform/aws" output -raw "$1"
 }
 json() { python -c "import json,sys; print(json.load(sys.stdin)$1)"; }
 API="$(output upload_url_endpoint)"

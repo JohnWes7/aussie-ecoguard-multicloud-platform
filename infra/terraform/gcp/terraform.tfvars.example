@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (git-ignored). Only the person who hosts the shared
+# inference service needs this directory.
+
+# GCP project ID (gcloud config get-value project). Billing must be enabled.
+gcp_project_id = "my-project-id"
+
+# Model version folder the service loads (default "v2").
+# model_version = "v2"

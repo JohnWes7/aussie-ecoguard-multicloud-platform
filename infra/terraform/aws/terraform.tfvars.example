@@ -1,14 +1,5 @@
-# Copy to terraform.tfvars (git-ignored) and fill in your own values.
+# Copy to terraform.tfvars (git-ignored).
 
-# Your GCP project ID (gcloud config get-value project). Billing must be enabled.
-gcp_project_id = "my-project-id"
-
-# Teammates: copy the models from Yijiang's bucket instead of downloading them.
-# Leave this out if you upload the models yourself with infra/upload_model.sh.
-model_source = "gs://aussie-ecoguard-models-87185953953"
-
-# Model version folder the service loads (default "v2").
-# model_version = "v2"
-
-# Bucket owner only: Google accounts allowed to read your model bucket.
-# model_readers = ["teammate@gmail.com"]
+# The shared Cloud Run inference service, deployed by Yijiang from
+# infra/terraform/gcp (`terraform output -raw inference_url` there).
+inference_url = "https://aussie-ecoguard-inference-nuz2izjveq-uk.a.run.app"

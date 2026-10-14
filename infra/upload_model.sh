@@ -4,11 +4,11 @@
 # Usage: ./infra/upload_model.sh v3
 #   Run it in the environment from inference/requirements.txt (e.g. .venv-inference),
 #   because it first runs infra/fetch_models.py to build models/.
-#   Only needed to create a NEW version. Teammates copy existing versions with
-#   model_source in terraform.tfvars instead (see README).
+#   Only the person who hosts the shared inference service runs it, to create
+#   a NEW version.
 #
-# Terraform creates the bucket and its read access (infra/terraform/gcp.tf),
-# so run `terraform apply` once before this.
+# Terraform creates the bucket and its read access (infra/terraform/gcp/gcp.tf),
+# so run `terraform apply` there once before this.
 #
 # Versions are never overwritten: each Cloud Run revision downloads the version
 # in its MODEL_GCS at startup, so changing a version in place would change the
@@ -23,7 +23,7 @@ BUCKET="${MODEL_BUCKET:-aussie-ecoguard-models-$PROJECT_NUMBER}"
 cd "$(dirname "$0")/.."
 
 if ! gcloud storage buckets describe "gs://$BUCKET" --project "$PROJECT" >/dev/null 2>&1; then
-  echo "gs://$BUCKET not found. Run terraform apply in infra/terraform first; it creates the bucket." >&2
+  echo "gs://$BUCKET not found. Run terraform apply in infra/terraform/gcp first; it creates the bucket." >&2
   exit 1
 fi
 
@@ -42,4 +42,4 @@ gcloud storage rsync --recursive models "gs://$BUCKET/$VERSION"
 echo "Local:  $(du -sb models | cut -f1) bytes, $(find models -type f | wc -l) files"
 echo "Bucket: $(gcloud storage du --summarize "gs://$BUCKET/$VERSION" | cut -d' ' -f1) bytes," \
   "$(gcloud storage ls "gs://$BUCKET/$VERSION/**" | wc -l) files"
-echo "To use it: set model_version = \"$VERSION\" in infra/terraform/terraform.tfvars, then terraform apply"
+echo "To use it: set model_version = \"$VERSION\" in infra/terraform/gcp/terraform.tfvars, then terraform apply there"

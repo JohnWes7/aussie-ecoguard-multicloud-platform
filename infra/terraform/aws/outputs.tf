@@ -1,4 +1,4 @@
-# Read by deploy.sh and the scripts with `terraform -chdir=infra/terraform output -raw <name>`.
+# Read by the scripts with `terraform -chdir=infra/terraform/aws output -raw <name>`.
 
 output "media_bucket_name" {
   value = terraform_data.media_bucket.output

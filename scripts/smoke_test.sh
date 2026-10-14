@@ -9,9 +9,9 @@ export AWS_PAGER=""
 
 REGION="${AWS_REGION:-us-east-1}"
 
-# output <name>: one value from infra/terraform/outputs.tf (read from the local state).
+# output <name>: one value from infra/terraform/aws/outputs.tf (read from the local state).
 output() {
-  terraform -chdir="$(dirname "$0")/../infra/terraform" output -raw "$1"
+  terraform -chdir="$(dirname "$0")/../infra/terraform/aws" output -raw "$1"
 }
 API="$(output upload_url_endpoint)"
 BUCKET="$(output media_bucket_name)"
@@ -63,7 +63,7 @@ trap cleanup EXIT
 ESM_STATE="$(aws lambda list-event-source-mappings --function-name "$(output tagging_function_name)" \
   --region "$REGION" --query "EventSourceMappings[0].State" --output text)"
 check "tagging queue trigger enabled" "$ESM_STATE" "Enabled"
-[ "$ESM_STATE" = "Enabled" ] || echo "      Run terraform apply in infra/terraform to enable it again (see README Troubleshooting)"
+[ "$ESM_STATE" = "Enabled" ] || echo "      Run terraform apply in infra/terraform/aws to enable it again (see README Troubleshooting)"
 
 # 1. CORS preflight
 PREFLIGHT="$(curl -s -i -X OPTIONS "$API" -H "Origin: $ORIGIN" \

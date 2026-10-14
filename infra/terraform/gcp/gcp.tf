@@ -1,4 +1,6 @@
 # ---------- GCP: Cloud Run inference service + model bucket ----------
+# One shared copy for the whole team (not everyone has a GCP account);
+# everyone's AWS (infra/terraform/aws) calls it through inference_url.
 
 data "google_project" "current" {}
 
@@ -34,8 +36,7 @@ resource "google_project_iam_member" "run_builder" {
 # ---------- Model bucket ----------
 
 # One folder per model version (config.json + weights, ~1.1 GB), uploaded by
-# infra/upload_model.sh or copied from a teammate's bucket (model_copy below).
-# The service downloads its version at startup.
+# infra/upload_model.sh. The service downloads its version at startup.
 resource "google_storage_bucket" "models" {
   name                        = "aussie-ecoguard-models-${local.gcp_project_number}"
   location                    = upper(var.gcp_region)
@@ -52,31 +53,6 @@ resource "google_storage_bucket_iam_member" "models_reader" {
   bucket = google_storage_bucket.models.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${local.run_service_account}"
-}
-
-# Teammates (Google accounts in model_readers) may read this bucket, so their
-# Terraform can copy the models from it instead of downloading them again.
-resource "google_storage_bucket_iam_member" "model_readers" {
-  for_each = toset(var.model_readers)
-
-  bucket = google_storage_bucket.models.name
-  role   = "roles/storage.objectViewer"
-  member = "user:${each.value}"
-}
-
-# Only when model_source is set (a teammate's project): copy the model version
-# from that bucket into this one before Cloud Run starts, as the service
-# reads it at startup. The copy runs inside Google Cloud (same region, so no
-# transfer cost) and is repeated when model_version changes. rsync skips
-# files that are already there.
-resource "terraform_data" "model_copy" {
-  count = var.model_source == "" ? 0 : 1
-
-  triggers_replace = [var.model_source, var.model_version]
-
-  provisioner "local-exec" {
-    command = "gcloud storage rsync ${var.model_source}/${var.model_version} gs://${google_storage_bucket.models.name}/${var.model_version} --recursive"
-  }
 }
 
 # ---------- Container image ----------
@@ -112,7 +88,7 @@ resource "google_artifact_registry_repository" "images" {
 }
 
 locals {
-  inference_dir = "${path.module}/../../inference"
+  inference_dir = "${path.module}/../../../inference"
 
   # The files Cloud Build receives (the same ones .gcloudignore lets through).
   inference_files = sort([
@@ -156,7 +132,7 @@ resource "google_cloud_run_v2_service" "inference" {
     execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
     # A cold start (~1 min: download + load the models) plus the longest video
     # accepted (3 minutes = 18 frames, a few seconds each). The tagging Lambda
-    # waits the same time (INFER_TIMEOUT in tagging.tf).
+    # waits the same time (INFER_TIMEOUT in ../aws/tagging.tf).
     timeout = "300s"
     # One inference at a time per instance; a second request would only
     # compete for the same CPUs.
@@ -207,7 +183,6 @@ resource "google_cloud_run_v2_service" "inference" {
   depends_on = [
     google_project_service.apis,
     google_storage_bucket_iam_member.models_reader,
-    terraform_data.model_copy,
   ]
 }
 

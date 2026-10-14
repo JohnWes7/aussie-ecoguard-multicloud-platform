@@ -1,7 +1,7 @@
 # ---------- Website: upload web/ to the website bucket ----------
 
 locals {
-  web_dir = "${path.module}/../../web"
+  web_dir = "${path.module}/../../../web"
 
   # Every file in web/ except config.js, which is generated below. A local
   # web/config.js (for a local dev server) is never uploaded.

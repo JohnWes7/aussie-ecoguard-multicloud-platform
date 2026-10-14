@@ -67,7 +67,7 @@ resource "aws_sqs_queue_policy" "tagging" {
 # Zips lambdas/tagging; a code change changes the hash, which updates the function.
 data "archive_file" "tagging" {
   type        = "zip"
-  source_dir  = "${path.module}/../../lambdas/tagging"
+  source_dir  = "${path.module}/../../../lambdas/tagging"
   output_path = "${path.module}/build/tagging.zip"
 }
 
@@ -87,9 +87,9 @@ resource "aws_lambda_function" "tagging" {
     variables = {
       TABLE_NAME    = aws_dynamodb_table.media.name
       BUCKET_NAME   = terraform_data.media_bucket.output
-      INFERENCE_URL = google_cloud_run_v2_service.inference.uri
+      INFERENCE_URL = var.inference_url
       MAX_ATTEMPTS  = "3"   # must stay below the queue's maxReceiveCount
-      INFER_TIMEOUT = "300" # = Cloud Run timeout (gcp.tf); a cold start (~1 min) plus a 3-minute video (18 frames)
+      INFER_TIMEOUT = "300" # = Cloud Run timeout (../gcp/gcp.tf); a cold start (~1 min) plus a 3-minute video (18 frames)
     }
   }
 }

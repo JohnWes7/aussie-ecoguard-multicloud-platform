@@ -2,7 +2,7 @@
 
 data "archive_file" "upload_url" {
   type        = "zip"
-  source_dir  = "${path.module}/../../lambdas/upload_url"
+  source_dir  = "${path.module}/../../../lambdas/upload_url"
   output_path = "${path.module}/build/upload_url.zip"
 }
 
@@ -29,7 +29,7 @@ resource "aws_lambda_function" "upload_url" {
 
 data "archive_file" "files" {
   type        = "zip"
-  source_dir  = "${path.module}/../../lambdas/files"
+  source_dir  = "${path.module}/../../../lambdas/files"
   output_path = "${path.module}/build/files.zip"
 }
 

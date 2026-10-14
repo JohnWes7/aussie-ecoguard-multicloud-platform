@@ -21,3 +21,75 @@
   flex: 0 0 100%;
   width: 100%;
 }
+
+/* Phones (D15). Checked at 320 px and 375 px wide. */
+
+/* A second row of tag badges no longer touches the first. */
+#library .badge {
+  margin-bottom: 0.25rem;
+}
+
+@media (max-width: 575.98px) {
+  /* One card per row: show the whole file name instead of cutting it off,
+     because the title tooltip cannot be seen without a mouse. */
+  #library .card-title.text-truncate {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Toasts at the top, full width, so they do not cover the result message
+     under the Subscribe button or the upload list. Bootstrap's bottom-0
+     helper is !important, so this has to be too. */
+  #toasts {
+    top: 0;
+    bottom: auto !important;
+    left: 0;
+    width: 100%;
+  }
+
+  #toasts .toast {
+    width: 100%;
+  }
+
+  /* The species list is taller than a phone screen, so the Subscribe row
+     sticks to the bottom of the screen while the list is in view. Without
+     this, Subscribe is below the fold and easy to miss. */
+  #notifications-tab fieldset > .d-flex {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 0.5rem 0;
+    background: var(--bs-body-bg);
+    border-top: 1px solid var(--bs-border-color);
+  }
+}
+
+/* Touch screens and phones: bigger targets for fingers (about 44 px, Apple's
+   guideline). The width check covers phones that do not report a touch pointer. */
+@media (pointer: coarse), (max-width: 575.98px) {
+  .btn-sm {
+    min-height: 44px;
+  }
+
+  /* The whole row of a species checkbox can be tapped, not only the box.
+     36 px plus the 8 px grid gap keeps rows 44 px apart without making the
+     list much longer. */
+  #notifications-tab .form-check {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    margin-bottom: 0;
+  }
+
+  #notifications-tab .form-check-input {
+    width: 1.25em;
+    height: 1.25em;
+    margin-top: 0;
+    flex-shrink: 0;
+  }
+
+  #notifications-tab .form-check-label {
+    flex-grow: 1;
+    padding: 0.375rem 0 0.375rem 0.5rem;
+  }
+}

@@ -7,6 +7,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0" # same as the Week 11 lab
     }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0" # same as the Week 11 lab
+    }
     archive = {
       source  = "hashicorp/archive"
       version = "~> 2.4"
@@ -23,6 +27,17 @@ provider "aws" {
       Project   = "aussie-ecoguard"
       ManagedBy = "Terraform"
     }
+  }
+}
+
+# Uses Application Default Credentials: run `gcloud auth application-default login` once.
+provider "google" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+
+  default_labels = {
+    project    = "aussie-ecoguard"
+    managed-by = "terraform"
   }
 }
 

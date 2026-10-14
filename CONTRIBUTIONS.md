@@ -17,7 +17,7 @@ Deadline: **2026-11-02 23:55** (code, team report, individual reports), then the
 Rules that keep `main` working:
 
 - Run `pytest tests/` before opening a merge request if you changed anything under `lambdas/`. A new Lambda needs its own `tests/test_<name>.py` (see [README.md § Unit tests](README.md#unit-tests)).
-- Only change the files listed for your task. `infra/template.yaml`, `infra/deploy_*.sh` and the existing Lambdas are wired together; changes there go through Yijiang, so ask in the group chat if your task needs one.
+- Only change the files listed for your task. `infra/terraform/`, `infra/deploy_gcp.sh` and the existing Lambdas are wired together; changes there go through Yijiang, so ask in the group chat if your task needs one.
 - APIs that do not exist yet: build against the request/response format in [architecture/README.md § 5](architecture/README.md#5-core-features-spec-4-requirement-by-requirement) and use a hard-coded sample response until the real endpoint is deployed.
 - Never commit AWS or GCP credentials, `web/config.js` or account IDs.
 
@@ -68,8 +68,8 @@ Each table covers one area of the spec. **Done when** is what the merge request 
 
 | ID | Task | Files | Level | Owner | Status | Done when |
 |---|---|---|---|---|---|---|
-| A1 | Cognito User Pool + Hosted UI (email, first name, last name, verification email) | `infra/template.yaml` | ★★★ | Yijiang Luo | Reserved | Sign-up sends a verification email; sign-in returns a token |
-| A2 | Cognito authorizer on every API route, `OPTIONS` routes for CORS | `infra/template.yaml` | ★★★ | Yijiang Luo | Reserved | Requests without a token get 401 |
+| A1 | Cognito User Pool + Hosted UI (email, first name, last name, verification email) | `infra/terraform/` (new `cognito.tf`) | ★★★ | Yijiang Luo | Reserved | Sign-up sends a verification email; sign-in returns a token |
+| A2 | Cognito authorizer on every API route, `OPTIONS` routes for CORS | `infra/terraform/api.tf` | ★★★ | Yijiang Luo | Reserved | Requests without a token get 401 |
 | A3 | `web/auth.js`: read the token after Hosted UI sign-in, `getToken()`, `signOut()`, redirect to sign-in when there is no valid token | `web/auth.js` (new) | ★★ | — | Open | Works in a local page with a token pasted in by hand; expired token redirects |
 | A4 | Navbar: show the signed-in user's email and a **Sign out** button | `web/index.html`, `web/auth.js` | ★ | — | Blocked (A3) | Screenshot signed in and after sign-out |
 | A5 | Send the token with every API call from the website | `web/upload.js`, `web/library.js` | ★★ | Yijiang Luo | Reserved | Smoke test passes with auth on |
@@ -80,7 +80,7 @@ Each table covers one area of the spec. **Done when** is what the merge request 
 | ID | Task | Files | Level | Owner | Status | Done when |
 |---|---|---|---|---|---|---|
 | B1 | `thumbnail` Lambda: skip non-images by `Content-Type`, scale the longest side to 256 px keeping the aspect ratio, save JPEG quality 70 to `thumbnails/<sha256>.jpg` (architecture § 5.2) | `lambdas/thumbnail/app.py`, `tests/test_thumbnail.py` (new) | ★★ | — | Open | `pytest tests/test_thumbnail.py` passes: image → thumbnail with the right size; video → skipped |
-| B2 | Deploy the thumbnail Lambda: image library packaging, EventBridge rule, template | `infra/` | ★★★ | Yijiang Luo | Blocked (B1) | Uploading an image creates its thumbnail |
+| B2 | Deploy the thumbnail Lambda: image library packaging, EventBridge rule, Terraform | `infra/` | ★★★ | Yijiang Luo | Blocked (B1) | Uploading an image creates its thumbnail |
 | B3 | Library cards show the thumbnail instead of the original, falling back to the original if it is missing | `web/library.js` | ★ | — | Blocked (B2) | Screenshot; network tab shows the small file |
 | B4 | Real model in Cloud Run: MegaDetector → SpeciesNet → CLIP, config in Cloud Storage so the model can change without code changes | `inference/` | ★★★ | Yijiang Luo | Done | Test images get correct species and counts |
 | B5 | Videos: one frame every 10 seconds | `inference/` | ★★★ | Yijiang Luo | Done | A test video gets the highest count per species |
@@ -96,7 +96,7 @@ Each table covers one area of the spec. **Done when** is what the merge request 
 | C4 | `edit-tags` Lambda: `POST /tags` add (`operation: 1`) or remove (`operation: 0`) tags on many files (architecture § 5.3) | `lambdas/edit_tags/app.py`, `tests/test_edit_tags.py` (new) | ★★ | — | Open | Unit tests: add, remove, remove a missing tag is ignored, unknown file rejected |
 | C5 | `delete-files` Lambda: `POST /delete` removes the original, the thumbnail and every DynamoDB item of each file | `lambdas/delete_files/app.py`, `tests/test_delete_files.py` (new) | ★★ | — | Open | Unit tests: S3 objects and all items gone; unknown file does not crash |
 | C6 | Cloud Run `POST /detect`: run the model on an uploaded file in memory, never store it (search by file, lost pet by photo) | `inference/` | ★★★ | Yijiang Luo | Reserved | File is not in S3, GCS or DynamoDB afterwards |
-| C7 | Add C3–C5 to the template and the smoke test | `infra/`, `scripts/` | ★★ | Yijiang Luo | Blocked (C3–C5) | Smoke test passes |
+| C7 | Add C3–C5 to Terraform (`api.tf`) and the smoke test | `infra/`, `scripts/` | ★★ | Yijiang Luo | Blocked (C3–C5) | Smoke test passes |
 
 ### D. Website (Spec §5)
 
@@ -136,7 +136,7 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 | F1 | `subscribe` Lambda: email from the token, SNS `Subscribe` with a filter policy on `species` | `lambdas/subscribe/`, `tests/test_subscribe.py` (new) | ★★ | — | Open | Unit tests with moto SNS |
 | F2 | `notify` Lambda: read DynamoDB Stream records, group by file, publish one SNS message per file with the `species` attribute and a link to the file page | `lambdas/notify/`, `tests/test_notify.py` (new) | ★★ | — | Open | Unit tests: two new tags on one file → one message |
 | F3 | Email wording: subject and body text | `lambdas/notify/` | ★ | Thanh Tri Le | Reserved | Example email in the merge request |
-| F4 | SNS topic, DynamoDB Stream and event filter in the template | `infra/` | ★★★ | Yijiang Luo | Blocked (F1, F2) | Adding a tag sends an email to a subscriber |
+| F4 | SNS topic, DynamoDB Stream and event filter in Terraform | `infra/` | ★★★ | Yijiang Luo | Blocked (F1, F2) | Adding a tag sends an email to a subscriber |
 
 ### G. Quality
 
@@ -166,5 +166,6 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-14 | Yijiang Luo | AWS deployment moved from CloudFormation to Terraform (`infra/terraform/`, see README § Deploy); `template.yaml` and `deploy_aws.sh` removed |
 | 2026-10-13 | Yijiang Luo | B4 (real model), B5 (videos) and B6 (test videos) done; C6 unblocked |
 | 2026-10-11 | Yijiang Luo | Created this file with the work done so far and the open tasks |

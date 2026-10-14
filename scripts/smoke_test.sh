@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end check of the deployed stack: tagging queue trigger, CORS preflight,
+# End-to-end check of the deployed system: tagging queue trigger, CORS preflight,
 # POST /upload-url, PUT to the presigned URL, tagging (EventBridge -> SQS ->
 # Lambda -> Cloud Run -> DynamoDB), duplicate rejection, bad requests and the website.
 # Cleans up its test file afterwards.
@@ -7,17 +7,16 @@
 set -uo pipefail
 export AWS_PAGER=""
 
-STACK_NAME="${STACK_NAME:-aussie-ecoguard}"
 REGION="${AWS_REGION:-us-east-1}"
 
+# output <name>: one value from infra/terraform/outputs.tf (read from the local state).
 output() {
-  aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
-    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+  terraform -chdir="$(dirname "$0")/../infra/terraform" output -raw "$1"
 }
-API="$(output UploadUrlEndpoint)"
-BUCKET="$(output MediaBucketName)"
-TABLE="$(output MediaTableName)"
-ORIGIN="https://$(output WebsiteBucketName).s3.amazonaws.com"
+API="$(output upload_url_endpoint)"
+BUCKET="$(output media_bucket_name)"
+TABLE="$(output media_table_name)"
+ORIGIN="https://$(output website_bucket_name).s3.amazonaws.com"
 
 FAILURES=0
 check() { # check <name> <actual> <expected>
@@ -61,10 +60,10 @@ trap cleanup EXIT
 
 # 0. Tagging queue trigger. Lambda turns it off by itself when LabRole loses its
 #    SQS permissions (e.g. after a Learner Lab session ends); uploads then stay PENDING.
-ESM_STATE="$(aws lambda list-event-source-mappings --function-name "$(output TaggingFunctionName)" \
+ESM_STATE="$(aws lambda list-event-source-mappings --function-name "$(output tagging_function_name)" \
   --region "$REGION" --query "EventSourceMappings[0].State" --output text)"
 check "tagging queue trigger enabled" "$ESM_STATE" "Enabled"
-[ "$ESM_STATE" = "Enabled" ] || echo "      Run ./infra/deploy_aws.sh to enable it again (see README Troubleshooting)"
+[ "$ESM_STATE" = "Enabled" ] || echo "      Run terraform apply in infra/terraform to enable it again (see README Troubleshooting)"
 
 # 1. CORS preflight
 PREFLIGHT="$(curl -s -i -X OPTIONS "$API" -H "Origin: $ORIGIN" \
@@ -115,7 +114,7 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type
 check "POST same file after READY returns 409" "$STATUS" "409"
 
 # 7. GET /files/{sha256} and GET /files show the tagged file
-FILES_API="$(output ApiUrl)/files"
+FILES_API="$(output api_url)/files"
 STATUS="$(curl -s -o "$WORK/file.json" -w '%{http_code}' "$FILES_API/$SHA")"
 check "GET /files/{sha256}" "$STATUS" "200"
 check "GET /files/{sha256} is READY with tags" \
@@ -135,12 +134,12 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type
   -d "{\"sha256\": \"$SHA\", \"filename\": \"a.gif\"}")"
 check "POST unsupported type" "$STATUS" "400"
 
-# 9. Website: the page is served over HTTPS and config.js points at this stack's API
-SITE="$(output WebsiteHttpsURL)"
+# 9. Website: the page is served over HTTPS and config.js points at this deployment's API
+SITE="$(output website_https_url)"
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$SITE")"
 check "website index.html" "$STATUS" "200"
-check "website config.js has this stack's ApiUrl" \
-  "$(curl -s "${SITE%index.html}config.js" | grep -c "\"$(output ApiUrl)\"")" "1"
+check "website config.js has this deployment's api_url" \
+  "$(curl -s "${SITE%index.html}config.js" | grep -c "\"$(output api_url)\"")" "1"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "All smoke tests passed"; else echo "$FAILURES smoke test(s) failed"; fi

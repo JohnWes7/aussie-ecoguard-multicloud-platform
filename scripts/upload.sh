@@ -7,16 +7,15 @@ set -euo pipefail
 export AWS_PAGER=""
 
 FILE="${1:?usage: ./scripts/upload.sh <file>}"
-STACK_NAME="${STACK_NAME:-aussie-ecoguard}"
 REGION="${AWS_REGION:-us-east-1}"
 
+# output <name>: one value from infra/terraform/outputs.tf (read from the local state).
 output() {
-  aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
-    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+  terraform -chdir="$(dirname "$0")/../infra/terraform" output -raw "$1"
 }
 json() { python -c "import json,sys; print(json.load(sys.stdin)$1)"; }
-API="$(output UploadUrlEndpoint)"
-TABLE="$(output MediaTableName)"
+API="$(output upload_url_endpoint)"
+TABLE="$(output media_table_name)"
 
 # Read from stdin: given a Windows path with backslashes, sha256sum prefixes its output with "\".
 SHA="$(sha256sum < "$FILE" | cut -d' ' -f1)"

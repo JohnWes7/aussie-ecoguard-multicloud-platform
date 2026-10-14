@@ -1,4 +1,4 @@
-"""Shared fixtures: a fake AWS (moto) with the same table and bucket as infra/template.yaml.
+"""Shared fixtures: a fake AWS (moto) with the same table and bucket as infra/terraform/storage.tf.
 
 Nothing here talks to real AWS, so no credentials are needed.
 """
@@ -12,7 +12,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-# Keep __pycache__ out of lambdas/, otherwise `cloudformation package` zips it.
+# Keep __pycache__ out of lambdas/, otherwise Terraform (archive_file) zips it.
 sys.dont_write_bytecode = True
 
 LAMBDAS_DIR = Path(__file__).resolve().parent.parent / "lambdas"

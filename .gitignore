@@ -21,6 +21,14 @@ packaged*.yaml
 # Node
 node_modules/
 
+# Terraform: provider downloads, local state (one per person's Learner Lab
+# account; may contain resource details) and per-person variable values.
+# .terraform.lock.hcl IS committed so everyone gets the same provider versions.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
 # Secrets and credentials
 .env
 .env.*

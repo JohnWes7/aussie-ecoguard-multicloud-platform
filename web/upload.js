@@ -13,7 +13,7 @@ const uploads = document.getElementById("uploads");
 
 // Check that the page can work at all before the user picks anything.
 const problem = !window.CONFIG
-  ? "config.js is missing. Deploy with infra/deploy_aws.sh, which generates it."
+  ? "config.js is missing. Deploy with Terraform (infra/terraform), or create it for a local copy (see README)."
   : !window.crypto?.subtle
     ? "This page must be opened over HTTPS (or on localhost) to compute checksums."
     : null;

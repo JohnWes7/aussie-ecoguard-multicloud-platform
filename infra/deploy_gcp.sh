@@ -44,7 +44,7 @@ echo "Deploying $SERVICE to project $PROJECT ($REGION), model $MODEL_VERSION"
 # the instance starts and loads the models.
 # --timeout 300: a cold start (~1 min: download + load the models) plus the
 # longest video accepted (3 minutes = 18 frames, a few seconds each). The
-# tagging Lambda waits the same time (INFER_TIMEOUT in infra/template.yaml).
+# tagging Lambda waits the same time (INFER_TIMEOUT in infra/terraform/tagging.tf).
 gcloud run deploy "$SERVICE" \
   --source inference \
   --project "$PROJECT" \

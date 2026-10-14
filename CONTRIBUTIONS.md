@@ -102,7 +102,7 @@ All pages use Bootstrap 5 like the existing ones and add a tab to `web/index.htm
 
 | ID | Task | Files | Level | Owner | Status | Done when |
 |---|---|---|---|---|---|---|
-| D1 | Toast messages: one `showToast(message, type)` helper (Bootstrap toasts) for success / error / info | `web/toast.js` (new), `web/index.html` | ★ | Thanh Tri Le | In Progress| Demo button or console call shows all three types |
+| D1 | Toast messages: one `showToast(message, type)` helper (Bootstrap toasts) for success / error / info | `web/toast.js` (new), `web/index.html` | ★ | Thanh Tri Le 2026-10-12 | In progress | Demo button or console call shows all three types |
 | D2 | Use toasts for upload results and API errors instead of plain text | `web/upload.js`, `web/library.js` | ★ | — | Blocked (D1) | Screenshots of success and error |
 | D3 | Loading states: spinner while the library loads, buttons disabled while a request runs, "No files yet" empty state | `web/library.js`, `web/style.css` | ★ | — | Open | Screenshots of loading and empty states |
 | D4 | **Search by tags** tab: rows of species + minimum count (add / remove rows), builds `{"fox": 2, "cat": 1}`, shows results as a card grid | `web/search.js` (new) | ★★ | — | Open | Correct JSON sent (console log); results shown from sample data |
@@ -165,3 +165,5 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 | Date | Who | Entry |
 |---|---|---|
 | 2026-10-11 | Yijiang Luo | Created this file with the work done so far and the open tasks |
+| 2026-10-12 | tlee0177    | Opened merge request for D1 |
+

@@ -19,24 +19,18 @@ Each area has one owner, who builds its backend **and** its part of the website.
 | Chatbot | Leon | §4.3 | Lex bot that understands questions like "show me all fox photos found yesterday" or "find a lost orange cat", calls the query code and returns links to the media |
 | Email notifications | Thanh Tri Le | §4.4 | Users subscribe to species and get an email when a new file with one of them is tagged (SNS). The Notifications tab is done; the subscribe and notify Lambdas are left |
 | Thumbnails | Thanh Tri Le | §4.2 | A Lambda triggered by each image upload: scale it down keeping the aspect ratio, compress it, save it, and store its URL so the library and search results can show it |
-| Website | Everyone | §5 | Each owner adds the UI for their own area (see below) |
+| Website | Everyone | §5 | Each owner adds the UI their own backend features need (see below) |
 | Report and demo | Everyone | §6 | Team report (max 1000 words: services and why, pros and cons, cost), demo script, screenshots. Individual reports are written alone |
 
-### Website: one tab per owner
+### Website
 
 Spec §5 only asks for a **simple** web UI that covers the core features (upload, queries, results, add / remove tags). Polish such as animations or extra layout work is not marked, so do it only once your area works end to end.
 
-- Every area gets its own tab in its **own file** under `web/` (e.g. `web/search.js`, `web/chat.js`). The file adds its tab and panel itself, like `web/subscribe.js` does, so `index.html` only needs one `<script>` line and nobody edits anyone else's tab.
-- **You maintain your own tab**: when your API changes, you update your tab in the same merge request.
-- Shared files (`web/index.html`, `web/upload.js`, `web/library.js`, `web/style.css`) belong to Yijiang. Keep changes there small and say in the merge request why they are needed (e.g. showing thumbnails in the library cards).
+- **Whoever builds a backend feature also builds the web UI it needs**, in the same merge request or right after it. That can be a new tab (e.g. Notifications, Search, Chat) or a change to an existing page (e.g. thumbnails in the Library cards); do whatever the feature needs.
+- A new tab goes in its own file under `web/` and adds its tab and panel itself, like `web/subscribe.js` does, so `index.html` only needs one `<script>` line.
+- When you change a file someone else is working on, say so in the group chat first to avoid merge conflicts.
 - Use Bootstrap 5 like the existing pages, and `showToast(message, type)` from `web/toast.js` for short messages.
-- Until your API is deployed, build the tab against a hard-coded sample response in the format from [architecture/README.md § 5](architecture/README.md#5-core-features-spec-4-requirement-by-requirement).
-
-| Owner | Tabs |
-|---|---|
-| Yijiang Luo | Upload, Library (exist), sign-in / sign-out in the navbar |
-| Leon | Search (tags, species, lost pet, thumbnail → original, by file), Edit tags / Delete, Chat |
-| Thanh Tri Le | Notifications (done); thumbnails in the library cards |
+- Until your API is deployed, build the UI against a hard-coded sample response in the format from [architecture/README.md § 5](architecture/README.md#5-core-features-spec-4-requirement-by-requirement).
 
 ### Rules that keep `main` working
 
@@ -89,7 +83,7 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
-| 2026-10-17 | Yijiang Luo | Task board replaced by one owner per area (TODO above): Yijiang authentication, Leon query API and chatbot, Thanh Tri Le notifications and thumbnails, report together. Each owner keeps their own website tab |
+| 2026-10-17 | Yijiang Luo | Task board replaced by one owner per area (TODO above): Yijiang authentication, Leon query API and chatbot, Thanh Tri Le notifications and thumbnails, report together. Whoever builds a backend feature also builds the web UI it needs |
 | 2026-10-15 | Thanh Tri Le | D1, D3, D11, D15 merged; D2 unblocked. D11 needs F1 (subscribe Lambda) live to work end to end |
 | 2026-10-14 | Yijiang Luo | Terraform split into `infra/terraform/aws/` (everyone deploys their own) and `infra/terraform/gcp/` (one shared inference service hosted by Yijiang), because not everyone has a GCP account. Teammates only need AWS: see README § Deploy |
 | 2026-10-14 | Yijiang Luo | GCP (Cloud Run, model bucket, image build) also in Terraform; `deploy_gcp.sh` removed. Everyone deploys their own AWS + GCP: see README § Deploy → First time, and send Yijiang your Google account for `model_readers` |

@@ -50,3 +50,21 @@ output "tagging_queue_url" {
 output "tagging_dead_letter_queue_url" {
   value = aws_sqs_queue.tagging_dlq.id
 }
+
+output "cognito_user_pool_id" {
+  value = aws_cognito_user_pool.users.id
+}
+
+output "cognito_client_id" {
+  value = aws_cognito_user_pool_client.web.id
+}
+
+# Base URL of the Hosted UI; the website appends /oauth2/authorize etc. to it.
+output "cognito_domain_url" {
+  value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com"
+}
+
+# Open in a browser to try sign-up/sign-in before the website handles the code.
+output "cognito_login_url" {
+  value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com/oauth2/authorize?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=${urlencode(local.auth_redirect_urls[0])}"
+}

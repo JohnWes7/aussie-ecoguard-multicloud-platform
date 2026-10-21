@@ -34,12 +34,19 @@ resource "aws_s3_object" "web" {
   cache_control = "no-cache"
 }
 
-# The page reads window.CONFIG (upload.js, library.js). Its values differ per
-# account, so it is written here instead of being kept in git.
+# The page reads window.CONFIG (auth.js, upload.js, library.js). Its values
+# differ per account, so it is written here instead of being kept in git.
 resource "aws_s3_object" "web_config" {
-  bucket        = terraform_data.website_bucket.output
-  key           = "config.js"
-  content       = "window.CONFIG = { apiUrl: \"${aws_api_gateway_stage.api.invoke_url}\" };\n"
+  bucket = terraform_data.website_bucket.output
+  key    = "config.js"
+  content = join("\n", [
+    "window.CONFIG = {",
+    "  apiUrl: \"${aws_api_gateway_stage.api.invoke_url}\",",
+    "  cognitoDomain: \"https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com\",",
+    "  clientId: \"${aws_cognito_user_pool_client.web.id}\",",
+    "};",
+    "",
+  ])
   content_type  = "text/javascript"
   cache_control = "no-cache"
 }

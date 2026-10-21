@@ -1,5 +1,10 @@
 /* Bootstrap does most of the styling; these are the few extras. */
 
+/* Nothing shows until auth.js has signed the user in (or shows a problem). */
+body.auth-pending {
+  visibility: hidden;
+}
+
 /* Same height for every preview so the cards line up. */
 .preview {
   height: 180px;

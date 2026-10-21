@@ -9,10 +9,16 @@
         integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-body-tertiary">
+<!-- auth-pending hides the page until auth.js has a token (style.css). -->
+<body class="bg-body-tertiary auth-pending">
   <nav class="navbar bg-dark" data-bs-theme="dark">
     <div class="container">
       <span class="navbar-brand">Aussie EcoGuard</span>
+      <!-- Filled in by auth.js after sign-in. -->
+      <div class="d-flex align-items-center gap-2">
+        <span id="user-name" class="navbar-text"></span>
+        <button id="sign-out" class="btn btn-outline-light btn-sm" type="button" hidden>Sign out</button>
+      </div>
     </div>
   </nav>
 
@@ -57,6 +63,8 @@
           integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
   <!-- config.js sets window.CONFIG; Terraform uploads it (infra/terraform/website.tf). -->
   <script src="config.js"></script>
+  <!-- Before the other scripts: they call getIdToken(). -->
+  <script src="auth.js"></script>
   <script src="toast.js"></script>
   <script src="upload.js"></script>
   <script src="library.js"></script>

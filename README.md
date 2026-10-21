@@ -365,7 +365,17 @@ To try changes to `web/` without deploying, serve the folder locally (the media 
 python -m http.server 8000 --directory web   # then open http://localhost:8000
 ```
 
-This needs `web/config.js` (git-ignored; Terraform only writes the copy in the bucket). Create it by hand: `window.CONFIG = { apiUrl: "<api_url output>" };`, using `terraform -chdir=infra/terraform/aws output -raw api_url`.
+This needs `web/config.js` (git-ignored; Terraform only writes the copy in the bucket). Create it by hand from the outputs of `terraform -chdir=infra/terraform/aws output`:
+
+```js
+window.CONFIG = {
+  apiUrl: "<api_url>",
+  cognitoDomain: "<cognito_domain_url>",
+  clientId: "<cognito_client_id>",
+};
+```
+
+Sign-in sends you back to `http://localhost:8000/index.html`, one of the app client's callback URLs, so use port 8000.
 
 ### Upload a real file
 

@@ -70,6 +70,21 @@ PREFLIGHT="$(curl -s -i -X OPTIONS "$API" -H "Origin: $ORIGIN" \
   -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type")"
 check "preflight status" "$(echo "$PREFLIGHT" | head -1 | cut -d' ' -f2)" "200"
 check "preflight allows POST" "$(echo "$PREFLIGHT" | grep -ci 'access-control-allow-methods:.*POST')" "1"
+# The GET routes need a preflight too, because the website sends an Authorization header.
+FILES_API="$(output api_url)/files"
+preflight_get() { # preflight_get <route name> <url>
+  PREFLIGHT="$(curl -s -i -X OPTIONS "$2" -H "Origin: $ORIGIN" \
+    -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization")"
+  check "preflight $1 status" "$(echo "$PREFLIGHT" | head -1 | cut -d' ' -f2)" "200"
+  check "preflight $1 allows Authorization" \
+    "$(echo "$PREFLIGHT" | grep -ci 'access-control-allow-headers:.*authorization')" "1"
+}
+preflight_get "/files" "$FILES_API"
+preflight_get "/files/{sha256}" "$FILES_API/$(printf '0%.0s' {1..64})"
+# Errors from API Gateway itself (here 403 for a missing route) carry a CORS header,
+# so the website can read their status.
+check "API Gateway error has CORS header" \
+  "$(curl -s -i "$API" -H "Origin: $ORIGIN" | grep -ci '^access-control-allow-origin:')" "1"
 
 # 2. POST /upload-url for a new file
 BODY="$WORK/body.json"
@@ -114,7 +129,6 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type
 check "POST same file after READY returns 409" "$STATUS" "409"
 
 # 7. GET /files/{sha256} and GET /files show the tagged file
-FILES_API="$(output api_url)/files"
 STATUS="$(curl -s -o "$WORK/file.json" -w '%{http_code}' "$FILES_API/$SHA")"
 check "GET /files/{sha256}" "$STATUS" "200"
 check "GET /files/{sha256} is READY with tags" \

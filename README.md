@@ -205,6 +205,8 @@ terraform -chdir=infra/terraform/gcp apply
 
 ## API
 
+**Who can do what.** Every route will require a signed-in Cognito user (in progress; until then the API is open). Once signed in, every user can see and change every file: there is no per-user ownership, like a public sightings board (see [architecture §2](architecture/README.md#2-authentication-and-authorisation)). `POST /upload-url` will record the uploader as `owner`, for information only.
+
 ### `POST /upload-url`
 
 Reserves a file by its SHA-256 and returns a presigned URL. The browser then uploads the file straight to S3; the file never passes through API Gateway or Lambda.
@@ -290,7 +292,9 @@ Returns one file in the same shape, in any status including `PENDING`. The websi
 | 400 | Not a 64-character hex SHA-256 | `{error}` |
 | 404 | No such file (never reserved, or its reservation was cleaned up) | `{error, file_id}` |
 
-Both routes are plain `GET`s without custom headers, so browsers send them without a CORS preflight and they have no `OPTIONS` method yet. The Cognito `Authorization` header will need one.
+Both routes have an `OPTIONS` method for the CORS preflight, like `/upload-url`. A plain `GET` would not need one, but the website sends the Cognito token in an `Authorization` header, and that makes the browser ask first.
+
+Errors that API Gateway answers itself, without running a Lambda (for example 403 for a route that does not exist, and later 401 from the Cognito authorizer), also carry `Access-Control-Allow-Origin` (gateway responses `DEFAULT_4XX` / `DEFAULT_5XX`). Without it the browser hides the status from the page and shows only a CORS error.
 
 ### Inference service (Cloud Run)
 
@@ -346,7 +350,7 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It checks that the tagging queue trigger is enabled, the CORS preflight, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It checks that the tagging queue trigger is enabled, the CORS preflights of all three routes, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 

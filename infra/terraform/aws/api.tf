@@ -160,9 +160,6 @@ resource "aws_api_gateway_resource" "file" {
   path_part   = "{sha256}"
 }
 
-# A GET without custom headers is a "simple" cross-origin request, so the
-# browser sends no preflight and these routes need no OPTIONS method yet.
-# TODO(cognito): the Authorization header will trigger preflights; add OPTIONS then.
 resource "aws_api_gateway_method" "files_get" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.files.id
@@ -195,12 +192,121 @@ resource "aws_api_gateway_integration" "file_get" {
   uri                     = aws_lambda_function.files.invoke_arn
 }
 
+# CORS preflights for both GET routes, the same as for /upload-url. A plain
+# GET needs none, but the Authorization header makes the browser send one.
+resource "aws_api_gateway_method" "files_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.files.id
+  http_method   = "OPTIONS"
+  authorization = "NONE" # the browser never sends a token with a preflight
+}
+
+resource "aws_api_gateway_integration" "files_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.files.id
+  http_method = aws_api_gateway_method.files_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "files_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.files.id
+  http_method = aws_api_gateway_method.files_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "files_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.files.id
+  http_method = aws_api_gateway_method.files_options.http_method
+  status_code = aws_api_gateway_method_response.files_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+  }
+  depends_on = [aws_api_gateway_integration.files_options]
+}
+
+resource "aws_api_gateway_method" "file_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.file.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "file_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.file.id
+  http_method = aws_api_gateway_method.file_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "file_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.file.id
+  http_method = aws_api_gateway_method.file_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "file_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.file.id
+  http_method = aws_api_gateway_method.file_options.http_method
+  status_code = aws_api_gateway_method_response.file_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+  }
+  depends_on = [aws_api_gateway_integration.file_options]
+}
+
 # Lets this API invoke the function for GET /files and GET /files/<anything>.
 resource "aws_lambda_permission" "files" {
   function_name = aws_lambda_function.files.function_name
   action        = "lambda:InvokeFunction"
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/GET/files*"
+}
+
+# ---------- CORS headers on API Gateway's own errors ----------
+
+# Errors that API Gateway answers itself, without running a Lambda (401 from
+# the Cognito authorizer, 403 for an unknown route, 429 throttling, 5xx), carry
+# no CORS header by default. The browser then hides the status from the page and
+# reports only a CORS error, so the website could not tell "signed out" from
+# "network down". These add the header to every 4xx and 5xx of that kind.
+resource "aws_api_gateway_gateway_response" "default_4xx" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  response_type = "DEFAULT_4XX"
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "default_5xx" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  response_type = "DEFAULT_5XX"
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin" = "'*'"
+  }
 }
 
 # ---------- Deployment and stage ----------
@@ -234,6 +340,16 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.files_get.id,
       aws_api_gateway_method.file_get.id,
       aws_api_gateway_integration.file_get.id,
+      aws_api_gateway_method.files_options.id,
+      aws_api_gateway_integration.files_options.id,
+      aws_api_gateway_method_response.files_options.id,
+      aws_api_gateway_integration_response.files_options.id,
+      aws_api_gateway_method.file_options.id,
+      aws_api_gateway_integration.file_options.id,
+      aws_api_gateway_method_response.file_options.id,
+      aws_api_gateway_integration_response.file_options.id,
+      aws_api_gateway_gateway_response.default_4xx.id,
+      aws_api_gateway_gateway_response.default_5xx.id,
     ]))
   }
 

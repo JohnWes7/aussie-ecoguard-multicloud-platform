@@ -168,6 +168,11 @@ resource "google_cloud_run_v2_service" "inference" {
         name  = "MODEL_GCS"
         value = "gs://${google_storage_bucket.models.name}/${var.model_version}"
       }
+      # Cognito pools whose tokens /infer accepts (main.py require_infer_token).
+      env {
+        name  = "TRUSTED_USER_POOLS"
+        value = join(",", var.trusted_user_pools)
+      }
       # Make torch use the 4 CPUs it has rather than the host's core count.
       env {
         name  = "OMP_NUM_THREADS"

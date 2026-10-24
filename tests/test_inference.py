@@ -9,10 +9,14 @@ import importlib.util
 import io
 import os
 import sys
+import time
+import types
 from pathlib import Path
 
+import jwt
 import pytest
 import requests
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -56,6 +60,9 @@ def main():
 def client(main):
     # Not used as a context manager, so the startup hook (which would load the
     # real models) does not run; main.pipeline is already the fake.
+    # The token check is switched off here; the tests under "Cognito token"
+    # use auth_client, which keeps it.
+    main.app.dependency_overrides[main.require_infer_token] = lambda: None
     return TestClient(main.app)
 
 
@@ -325,6 +332,172 @@ def test_docs_describe_the_infer_endpoint(client):
     schema = client.get("/openapi.json").json()
     assert "/infer" in schema["paths"]
     assert "InferRequest" in schema["components"]["schemas"]
+
+
+# ---------- Cognito token ----------
+# Tokens are signed here with a key pair made for the tests; the user pool's
+# public key download (JWKS) is replaced by fake_jwks.
+
+POOL = "us-east-1_Trusted1"
+ISSUER = f"https://cognito-idp.us-east-1.amazonaws.com/{POOL}"
+OTHER_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Someone2"
+INFER = {"url": GOOD_URL, "file_type": "image"}
+
+
+@pytest.fixture(scope="module")
+def keys():
+    return {
+        "pool": rsa.generate_private_key(public_exponent=65537, key_size=2048),
+        "attacker": rsa.generate_private_key(public_exponent=65537, key_size=2048),
+    }
+
+
+def make_token(private_key, **claims):
+    """A token like the tagging Lambda's (machine client, infer scope), with
+    `claims` changed; a claim set to None is left out."""
+    body = {"iss": ISSUER, "token_use": "access", "scope": "aussie-ecoguard/infer",
+            "client_id": "machine", "sub": "machine", "exp": time.time() + 3600}
+    body.update(claims)
+    body = {name: value for name, value in body.items() if value is not None}
+    return jwt.encode(body, private_key, algorithm="RS256", headers={"kid": "k1"})
+
+
+@pytest.fixture
+def fake_jwks(main, keys, monkeypatch):
+    """Every trusted pool's public key is the test pool key; records the issuers asked for."""
+    asked = []
+
+    class FakeJwksClient:
+        def get_signing_key_from_jwt(self, token):
+            return types.SimpleNamespace(key=keys["pool"].public_key())
+
+    def jwks_client(issuer):
+        asked.append(issuer)
+        return FakeJwksClient()
+    monkeypatch.setattr(main, "jwks_client", jwks_client)
+    return asked
+
+
+@pytest.fixture
+def auth_client(main, fake_jwks, s3_file, monkeypatch):
+    monkeypatch.setattr(main, "TRUSTED_USER_POOLS", [POOL])
+    s3_file()
+    return TestClient(main.app)
+
+
+def bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_machine_token_from_a_trusted_pool_is_accepted(auth_client, keys):
+    response = auth_client.post("/infer", json=INFER, headers=bearer(make_token(keys["pool"])))
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Basic abc"}, {"Authorization": "Bearer "}])
+def test_missing_token_returns_401(auth_client, main, headers):
+    response = auth_client.post("/infer", json=INFER, headers=headers)
+    assert response.status_code == 401
+    assert main.pipeline.images == []
+
+
+def test_token_is_checked_before_the_request_body(auth_client):
+    response = auth_client.post("/infer", json={"url": "https://example.com/x"})
+    assert response.status_code == 401  # not 422: callers without a token learn nothing
+
+
+def test_expired_token_returns_401(auth_client, keys):
+    token = make_token(keys["pool"], exp=time.time() - 60)
+    assert auth_client.post("/infer", json=INFER, headers=bearer(token)).status_code == 401
+
+
+def test_token_signed_with_another_key_returns_401(auth_client, keys):
+    # Claims that look right, but not signed by the pool.
+    token = make_token(keys["attacker"])
+    assert auth_client.post("/infer", json=INFER, headers=bearer(token)).status_code == 401
+
+
+def test_unsigned_token_returns_401(auth_client):
+    token = jwt.encode({"iss": ISSUER, "token_use": "access", "scope": "aussie-ecoguard/infer",
+                        "exp": time.time() + 3600}, None, algorithm="none")
+    assert auth_client.post("/infer", json=INFER, headers=bearer(token)).status_code == 401
+
+
+def test_token_from_an_untrusted_pool_returns_401_without_fetching_its_keys(auth_client, keys, fake_jwks):
+    # Validly signed by the attacker's own pool, with a scope of the same name.
+    token = make_token(keys["attacker"], iss=OTHER_ISSUER)
+
+    response = auth_client.post("/infer", json=INFER, headers=bearer(token))
+
+    assert response.status_code == 401
+    assert fake_jwks == []  # the token's own iss never decides where keys come from
+
+
+@pytest.mark.parametrize("iss", [
+    "https://evil.example/us-east-1_Trusted1",                          # not Cognito
+    "https://cognito-idp.us-east-1.amazonaws.com.evil.example/us-east-1_Trusted1",
+    None,
+])
+def test_issuer_that_is_not_cognito_returns_401(auth_client, main, keys, fake_jwks, monkeypatch, iss):
+    monkeypatch.setattr(main, "TRUSTED_USER_POOLS", ["*"])  # even when any pool is accepted
+    token = make_token(keys["pool"], iss=iss)
+
+    assert auth_client.post("/infer", json=INFER, headers=bearer(token)).status_code == 401
+    assert fake_jwks == []
+
+
+def test_star_accepts_any_cognito_pool(auth_client, main, keys, fake_jwks, monkeypatch):
+    monkeypatch.setattr(main, "TRUSTED_USER_POOLS", ["*"])
+    token = make_token(keys["pool"], iss=OTHER_ISSUER)
+
+    assert auth_client.post("/infer", json=INFER, headers=bearer(token)).status_code == 200
+    assert fake_jwks == [OTHER_ISSUER]
+
+
+@pytest.mark.parametrize("claims", [
+    {"token_use": "id", "aud": "web-client", "scope": None},  # a signed-in user's ID token
+    {"scope": "openid email profile"},                         # a user's access token
+    {"scope": "aussie-ecoguard/infer-extra"},                  # only the exact scope counts
+])
+def test_user_tokens_of_the_trusted_pool_return_403(auth_client, main, keys, claims):
+    token = make_token(keys["pool"], **claims)
+
+    response = auth_client.post("/infer", json=INFER, headers=bearer(token))
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "token lacks the aussie-ecoguard/infer scope"}
+    assert main.pipeline.images == []
+
+
+def test_keys_that_cannot_be_fetched_return_503(auth_client, main, keys, monkeypatch):
+    class Unreachable:
+        def get_signing_key_from_jwt(self, token):
+            raise jwt.PyJWKClientConnectionError("timed out")
+    monkeypatch.setattr(main, "jwks_client", lambda issuer: Unreachable())
+
+    response = auth_client.post("/infer", json=INFER, headers=bearer(make_token(keys["pool"])))
+
+    assert response.status_code == 503  # the tagging Lambda retries 5xx
+
+
+def test_health_needs_no_token(auth_client):
+    assert auth_client.get("/health").status_code == 200
+
+
+@pytest.mark.parametrize("value, pools", [
+    ("us-east-1_A, us-east-1_B", ["us-east-1_A", "us-east-1_B"]),
+    ("", []),  # nothing trusted: every token is refused
+])
+def test_trusted_pools_come_from_the_environment(monkeypatch, value, pools):
+    monkeypatch.setenv("TRUSTED_USER_POOLS", value)
+    sys.path.insert(0, str(INFERENCE_DIR))
+    try:
+        spec = importlib.util.spec_from_file_location("inference_main_env", INFERENCE_DIR / "main.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(INFERENCE_DIR))
+    assert module.TRUSTED_USER_POOLS == pools
 
 
 # ---- loading the models at startup ----

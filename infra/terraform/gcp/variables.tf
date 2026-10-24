@@ -19,3 +19,18 @@ variable "model_version" {
   type    = string
   default = "v2"
 }
+
+# Cognito user pools whose tokens /infer accepts: one per teammate's AWS
+# deployment (`terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id`).
+# A deployment whose pool is missing gets 401, so its uploads become FAILED.
+# ["*"] accepts any Cognito pool. Only for a short changeover: anyone can create
+# a pool with an aussie-ecoguard/infer scope and sign valid tokens.
+variable "trusted_user_pools" {
+  type        = list(string)
+  description = "Cognito user pool IDs (e.g. us-east-1_AbC123) allowed to call /infer, or [\"*\"]"
+
+  validation {
+    condition     = alltrue([for p in var.trusted_user_pools : p == "*" || can(regex("^[a-z0-9-]+_[0-9A-Za-z]+$", p))])
+    error_message = "Each entry must be a user pool ID such as us-east-1_AbC123, or \"*\"."
+  }
+}

@@ -112,6 +112,14 @@ check "GET /files with a forged token returns 403" \
   "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: ${TOKEN%.*}.AAAA" "$FILES_API")" "403"
 check "401 has CORS header" \
   "$(curl -s -i "$FILES_API" -H "Origin: $ORIGIN" | grep -ci '^access-control-allow-origin:')" "1"
+# Cloud Run (shared, GCP) refuses calls without the machine client's token too.
+# The tagging Lambda's own token is checked by step 5 (tagging reaches READY).
+INFERENCE="$(output inference_url)"
+BAD_BODY='{"url": "https://example.com/x", "file_type": "image"}'
+check "Cloud Run /infer without token returns 401" "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "$INFERENCE/infer" -H "Content-Type: application/json" -d "$BAD_BODY")" "401"
+check "Cloud Run /infer with a user's token returns 403" "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "$INFERENCE/infer" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BAD_BODY")" "403"
 
 # 2. POST /upload-url for a new file
 BODY="$WORK/body.json"

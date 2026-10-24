@@ -138,7 +138,7 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
    gcloud config set project <project-id>
    ```
 
-2. `cp infra/terraform/gcp/terraform.tfvars.example infra/terraform/gcp/terraform.tfvars` and fill in the project ID.
+2. `cp infra/terraform/gcp/terraform.tfvars.example infra/terraform/gcp/terraform.tfvars` and fill in the project ID and `trusted_user_pools`: the Cognito user pool ID of every teammate's AWS deployment. Each teammate gets theirs with `terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id` and sends it to you. Add a new one and `apply` again; until then that teammate's uploads become `FAILED` (`inference returned 401`).
 3. Deploy with `terraform -chdir=infra/terraform/gcp init`, then `terraform -chdir=infra/terraform/gcp apply`. Run the same `apply` after every change to `inference/` or `gcp.tf`.
 
 `apply` builds a new inference image when anything in `inference/` changed (Cloud Build, 5–10 minutes, no local Docker) and deploys it to Cloud Run. The image tag is a hash of those files, so an unchanged `inference/` is never rebuilt. The service URL (`terraform -chdir=infra/terraform/gcp output -raw inference_url`) stays the same across deploys, so the AWS side does not need a new `apply`. If the service ever moves (a new project), update `inference_url` in `infra/terraform/aws/terraform.tfvars.example` and tell everyone to update their `terraform.tfvars` and `apply`.
@@ -304,6 +304,8 @@ Errors that API Gateway answers itself, without running a Lambda (for example 40
 
 Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credentials).
 
+`POST /infer` needs `Authorization: Bearer <Cognito access token>`. The token must be signed by one of the user pools in `trusted_user_pools` (`infra/terraform/gcp/terraform.tfvars`), not expired, and carry the scope `aussie-ecoguard/infer`. Only each deployment's machine client `aussie-ecoguard-tagging` can get that scope; signed-in users' tokens cannot. The token is checked before the body. `GET /health` and `GET /docs` need no token.
+
 `POST /infer`
 
 ```json
@@ -313,11 +315,14 @@ Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credential
 | Status | Meaning | Body |
 |---|---|---|
 | 200 | Done | `{"tags": {"fox": 2, "cat": 1}, "attributes": ["orange"], "model": "md5a+speciesnet-4.0.3a+clip-b32-v2"}` |
+| 401 | No bearer token; or it is expired, not validly signed, or from a user pool that is not trusted | `{"error": "missing bearer token"}`, `{"error": "invalid token"}`, `{"error": "token is not from a trusted user pool"}` |
+| 403 | A valid token without the `aussie-ecoguard/infer` scope, e.g. a signed-in user's | `{"error": "token lacks the aussie-ecoguard/infer scope"}` |
 | 413 | The image is larger than 30 MB, or the video larger than 500 MB | `{"error": "file is larger than 30 MB"}` |
 | 422 | `url` is not a presigned URL for an `aussie-ecoguard-media-*` bucket's `uploads/`, bad `file_type`, or the body is not JSON (FastAPI validation) | `{"detail": [...]}` |
 | 422 | The file cannot be decoded as an image / video | `{"error": "file is not a valid image"}`, `{"error": "file is not a valid video"}` |
 | 422 | The video is longer than 3 minutes | `{"error": "video is 190 s long; the limit is 3 minutes"}` |
 | 502 | The file could not be downloaded (e.g. the URL or the credentials that signed it expired) | `{"error": "could not download file (S3 returned 403)"}` |
+| 503 | The user pool's public keys could not be fetched to check the token | `{"error": "could not fetch the user pool's keys"}` |
 
 Cloud Run downloads the file itself from the presigned URL instead of receiving it base64-encoded: Cloud Run requests are limited to 32 MiB and base64 adds 33%, so videos would not fit.
 
@@ -397,10 +402,16 @@ Uploads the file the same way the website does (signed in as the Cognito test us
 ### Manual test of the inference service
 
 ```bash
-SVC=$(gcloud run services describe aussie-ecoguard-inference --region us-east4 --format 'value(status.url)')
+TF="terraform -chdir=infra/terraform/aws output -raw"
+SVC=$($TF inference_url)
 curl "$SVC/health"
+# A token as the machine client, the way the tagging Lambda gets it (valid for 1 hour)
+TOKEN=$(curl -s -X POST "$($TF cognito_domain_url)/oauth2/token" \
+  -u "$($TF cognito_machine_client_id):$($TF cognito_machine_client_secret)" \
+  -d "grant_type=client_credentials&scope=aussie-ecoguard/infer" |
+  python -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
 URL=$(aws s3 presign "s3://aussie-ecoguard-media-<account-id>/uploads/<sha256>" --expires-in 300)
-curl -X POST "$SVC/infer" -H "Content-Type: application/json" \
+curl -X POST "$SVC/infer" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"url\": \"$URL\", \"file_type\": \"image\"}"
 ```
 
@@ -417,7 +428,7 @@ python -m venv .venv-inference                                      # first time
 cd inference && MODEL_DIR=../models ../.venv-inference/Scripts/python -m uvicorn main:app --port 8080
 ```
 
-Without `MODEL_GCS` the service reads the models straight from `MODEL_DIR`. After changing `infra/model/config.json`, copy it to `models/config.json` (or run `fetch_models.py` again). Only presigned URLs of the media bucket are accepted, so test `/infer` as in the previous section with `SVC=http://localhost:8080`.
+Without `MODEL_GCS` the service reads the models straight from `MODEL_DIR`. After changing `infra/model/config.json`, copy it to `models/config.json` (or run `fetch_models.py` again). Only presigned URLs of the media bucket are accepted, so test `/infer` as in the previous section with `SVC=http://localhost:8080`. It needs a token too, so also set `TRUSTED_USER_POOLS=<your cognito_user_pool_id>` when starting uvicorn.
 
 ### Manual test of upload-url
 
@@ -484,6 +495,7 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | The first upload after a quiet period takes about a minute | Cloud Run scaled to zero, and a new instance downloads and loads the models first (`Downloaded ... in` and `Loaded models in` in its logs). Later uploads are fast. `--min-instances 1` would avoid it but is billed all the time |
 | A new Cloud Run revision does not start; its logs show `no model files under gs://...` or a 403 from Cloud Storage | The version folder does not exist (run `./infra/upload_model.sh <version>`), or the service account lost read access to the model bucket (running `upload_model.sh` again adds it back) |
 | The image build fails with `storage.objects.get` denied | Cloud Build runs as the Compute Engine default service account, which needs `roles/run.builder`. Terraform grants it (`gcp.tf`), but a new grant can take a minute to apply; run `apply` in `infra/terraform/gcp` again |
+| Uploads become `FAILED` with `inference returned 401: token is not from a trusted user pool` | The shared Cloud Run does not trust your Cognito user pool yet. Send `terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id` to the person hosting the inference service; they add it to `trusted_user_pools` and `apply` the GCP side. Then upload the file again |
 | API returns 401 `Unauthorized`, or 403 `Access Denied` | The Cognito authorizer refused the token. 401: the `Authorization` header is missing, not a JWT, or expired (ID tokens last 1 hour). 403 `Access Denied` (not `Missing Authentication Token`): a JWT whose signature does not check out, e.g. edited by hand or from another user pool. The website gets a fresh token by itself; reload the page or sign in again. For curl, get a new token as in [Manual test of upload-url](#manual-test-of-upload-url). Your own code that calls the API must use `apiFetch()` (see [Website](#website)) |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET` on `/upload-url`, a typo, or a missing `/api` stage. Right after a deploy that **adds** a route, the new route can answer 403 for about a minute until every API Gateway node has the new deployment; the smoke test can fail in that window, so run it again |
 | `PUT` returns 403 `SignatureDoesNotMatch` | The URL was not copied completely, or the headers differ from the ones returned |

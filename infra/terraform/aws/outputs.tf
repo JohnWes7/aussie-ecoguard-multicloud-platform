@@ -64,6 +64,22 @@ output "cognito_domain_url" {
   value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com"
 }
 
+# The shared Cloud Run inference service this deployment calls (terraform.tfvars).
+output "inference_url" {
+  value = var.inference_url
+}
+
+# The machine client the tagging Lambda signs in as to call Cloud Run (cognito.tf).
+# For manual tests of /infer; `terraform output -raw` prints the secret.
+output "cognito_machine_client_id" {
+  value = aws_cognito_user_pool_client.tagging.id
+}
+
+output "cognito_machine_client_secret" {
+  value     = aws_cognito_user_pool_client.tagging.client_secret
+  sensitive = true
+}
+
 # The smoke test's Cognito user (cognito.tf).
 output "smoke_test_username" {
   value = aws_cognito_user.smoke_test.username

@@ -6,3 +6,8 @@ gcp_project_id = "my-project-id"
 
 # Model version folder the service loads (default "v2").
 # model_version = "v2"
+
+# Cognito user pools allowed to call /infer: one per teammate's AWS deployment.
+# Each teammate runs: terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id
+# ["*"] accepts any Cognito pool (short changeover only, see variables.tf).
+trusted_user_pools = ["us-east-1_AbC123", "us-east-1_DeF456"]

@@ -64,6 +64,19 @@ resource "aws_api_gateway_rest_api" "api" {
   }
 }
 
+# Checks the Cognito ID token in the Authorization header (the raw JWT, no
+# "Bearer ") before any Lambda runs: signature, issuer (our user pool) and
+# expiry. Missing or invalid -> 401, and the Lambda is never invoked. Every
+# route except the OPTIONS preflights uses it. A valid token's claims reach the
+# Lambda in event["requestContext"]["authorizer"]["claims"].
+resource "aws_api_gateway_authorizer" "cognito" {
+  name            = "cognito"
+  rest_api_id     = aws_api_gateway_rest_api.api.id
+  type            = "COGNITO_USER_POOLS"
+  provider_arns   = [aws_cognito_user_pool.users.arn]
+  identity_source = "method.request.header.Authorization"
+}
+
 # ---------- POST /upload-url -> upload_url function ----------
 
 resource "aws_api_gateway_resource" "upload_url" {
@@ -76,7 +89,8 @@ resource "aws_api_gateway_method" "upload_url_post" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.upload_url.id
   http_method   = "POST"
-  authorization = "NONE" # TODO(cognito): COGNITO_USER_POOLS + authorizer_id
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Lambda proxy integration: API Gateway passes the whole HTTP request to the
@@ -164,7 +178,8 @@ resource "aws_api_gateway_method" "files_get" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.files.id
   http_method   = "GET"
-  authorization = "NONE" # TODO(cognito)
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 resource "aws_api_gateway_integration" "files_get" {
@@ -180,7 +195,8 @@ resource "aws_api_gateway_method" "file_get" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.file.id
   http_method   = "GET"
-  authorization = "NONE" # TODO(cognito)
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 resource "aws_api_gateway_integration" "file_get" {
@@ -336,6 +352,7 @@ resource "aws_api_gateway_deployment" "api" {
   triggers = {
     redeployment = sha1(jsonencode([
       filesha1("${path.module}/api.tf"),
+      aws_api_gateway_authorizer.cognito.id,
       aws_api_gateway_resource.upload_url.id,
       aws_api_gateway_method.upload_url_post.id,
       aws_api_gateway_integration.upload_url_post.id,

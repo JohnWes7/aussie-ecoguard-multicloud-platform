@@ -6,15 +6,15 @@ The full design is in [architecture/README.md](architecture/README.md). This REA
 
 ## Current status
 
-The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. Cognito, thumbnails and the query APIs come next.
+The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website and the AWS API require a Cognito sign-in (Cloud Run does not check tokens yet). Thumbnails and the query APIs come next.
 
 | Part | Status |
 |---|---|
 | Media bucket, `Media` DynamoDB table, website bucket | Deployed |
-| `POST /upload-url` (Lambda + API Gateway, deduplication by SHA-256) | Deployed, no auth yet |
+| `POST /upload-url` (Lambda + API Gateway, deduplication by SHA-256) | Deployed, Cognito sign-in required |
 | `tagging` (EventBridge rule → SQS queue → Lambda → Cloud Run → DynamoDB) | Deployed |
 | Cloud Run inference service: MegaDetector → SpeciesNet → CLIP (see [Model selection](#model-selection)), images only | Deployed, no auth yet |
-| `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, no auth yet |
+| `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
 
@@ -208,7 +208,7 @@ terraform -chdir=infra/terraform/gcp apply
 
 ## API
 
-**Who can do what.** Every route will require a signed-in Cognito user (in progress; until then the API is open). Once signed in, every user can see and change every file: there is no per-user ownership, like a public sightings board (see [architecture §2](architecture/README.md#2-authentication-and-authorisation)). `POST /upload-url` will record the uploader as `owner`, for information only.
+**Who can do what.** Every route requires a signed-in Cognito user: send the user's ID token in the `Authorization` header (the raw token, no `Bearer `). Without a valid one, API Gateway's Cognito authorizer answers 401 and no Lambda runs. Once signed in, every user can see and change every file: there is no per-user ownership, like a public sightings board (see [architecture §2](architecture/README.md#2-authentication-and-authorisation)). `POST /upload-url` will record the uploader as `owner`, for information only.
 
 ### `POST /upload-url`
 
@@ -391,7 +391,7 @@ Sign-in sends you back to `http://localhost:8000/index.html`, one of the app cli
 ./scripts/upload.sh path/to/fox.jpg
 ```
 
-Uploads the file the same way the website does, waits for tagging and prints the stored items. A file that is already in the system gets 409, and the script prints its items instead. The file stays in the system.
+Uploads the file the same way the website does (signed in as the Cognito test user), waits for tagging and prints the stored items. A file that is already in the system gets 409, and the script prints its items instead. The file stays in the system.
 
 ### Manual test of the inference service
 
@@ -423,9 +423,12 @@ Without `MODEL_GCS` the service reads the models straight from `MODEL_DIR`. Afte
 `scripts/upload.sh` does all of this; the steps by hand are:
 
 ```bash
-API=$(terraform -chdir=infra/terraform/aws output -raw upload_url_endpoint)
+TF="terraform -chdir=infra/terraform/aws output -raw"
+API=$($TF upload_url_endpoint)
+# An ID token for the test user (valid for 1 hour)
+TOKEN=$(aws cognito-idp admin-initiate-auth --region us-east-1   --user-pool-id "$($TF cognito_user_pool_id)" --client-id "$($TF cognito_client_id)"   --auth-flow ADMIN_USER_PASSWORD_AUTH   --auth-parameters "USERNAME=$($TF smoke_test_username),PASSWORD=$($TF smoke_test_password)"   --query AuthenticationResult.IdToken --output text)
 SHA=$(sha256sum fox.jpg | cut -d' ' -f1)
-curl -i -X POST "$API" -H "Content-Type: application/json" \
+curl -i -X POST "$API" -H "Authorization: $TOKEN" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"fox.jpg\"}"
 
 # Use the url and headers from the response (quote the URL, it contains &):
@@ -479,6 +482,7 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | The first upload after a quiet period takes about a minute | Cloud Run scaled to zero, and a new instance downloads and loads the models first (`Downloaded ... in` and `Loaded models in` in its logs). Later uploads are fast. `--min-instances 1` would avoid it but is billed all the time |
 | A new Cloud Run revision does not start; its logs show `no model files under gs://...` or a 403 from Cloud Storage | The version folder does not exist (run `./infra/upload_model.sh <version>`), or the service account lost read access to the model bucket (running `upload_model.sh` again adds it back) |
 | The image build fails with `storage.objects.get` denied | Cloud Build runs as the Compute Engine default service account, which needs `roles/run.builder`. Terraform grants it (`gcp.tf`), but a new grant can take a minute to apply; run `apply` in `infra/terraform/gcp` again |
+| API returns 401 `Unauthorized`, or 403 `Access Denied` | The Cognito authorizer refused the token. 401: the `Authorization` header is missing, not a JWT, or expired (ID tokens last 1 hour). 403 `Access Denied` (not `Missing Authentication Token`): a JWT whose signature does not check out, e.g. edited by hand or from another user pool. The website gets a fresh token by itself; reload the page or sign in again. For curl, get a new token as in [Manual test of upload-url](#manual-test-of-upload-url). Your own code that calls the API must use `apiFetch()` (see [Website](#website)) |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET` on `/upload-url`, a typo, or a missing `/api` stage. Right after a deploy that **adds** a route, the new route can answer 403 for about a minute until every API Gateway node has the new deployment; the smoke test can fail in that window, so run it again |
 | `PUT` returns 403 `SignatureDoesNotMatch` | The URL was not copied completely, or the headers differ from the ones returned |
 | `PUT` returns 400 `BadDigest` | The file content does not match the SHA-256 that was reserved |

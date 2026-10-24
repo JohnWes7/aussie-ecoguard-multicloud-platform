@@ -97,6 +97,22 @@ preflight_get "/files/{sha256}" "$FILES_API/$(printf '0%.0s' {1..64})"
 check "API Gateway error has CORS header" \
   "$(curl -s -i "$API" -H "Origin: $ORIGIN" | grep -ci '^access-control-allow-origin:')" "1"
 
+# 1b. Sign-in required: the Cognito authorizer refuses the request before any
+#     Lambda runs, with a CORS header. A missing or unreadable token gets 401;
+#     a well-formed JWT whose signature does not check out gets 403 Access Denied.
+check "POST /upload-url without token returns 401" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" \
+  -H "Content-Type: application/json" -d "{\"sha256\": \"$SHA\", \"filename\": \"smoke.jpg\"}")" "401"
+check "GET /files without token returns 401" "$(curl -s -o /dev/null -w '%{http_code}' "$FILES_API")" "401"
+check "GET /files/{sha256} without token returns 401" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$FILES_API/$(printf '0%.0s' {1..64})")" "401"
+check "GET /files with a token that is not a JWT returns 401" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: not-a-token" "$FILES_API")" "401"
+# The test user's token with its signature (the part after the last dot) replaced.
+check "GET /files with a forged token returns 403" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: ${TOKEN%.*}.AAAA" "$FILES_API")" "403"
+check "401 has CORS header" \
+  "$(curl -s -i "$FILES_API" -H "Origin: $ORIGIN" | grep -ci '^access-control-allow-origin:')" "1"
+
 # 2. POST /upload-url for a new file
 BODY="$WORK/body.json"
 STATUS="$(curl -s "${AUTH[@]}" -o "$BODY" -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \

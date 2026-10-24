@@ -39,8 +39,16 @@ for item in json.load(sys.stdin):
     print("  " + json.dumps({k: plain(v) for k, v in item.items() if k != "file_id"}))'
 }
 
+# The API requires a signed-in user: sign in as the smoke test's Cognito user
+# (infra/terraform/aws/cognito.tf), so the file's owner is that user.
+TOKEN="$(aws cognito-idp admin-initiate-auth --region "$REGION" \
+  --user-pool-id "$(output cognito_user_pool_id)" --client-id "$(output cognito_client_id)" \
+  --auth-flow ADMIN_USER_PASSWORD_AUTH \
+  --auth-parameters "USERNAME=$(output smoke_test_username),PASSWORD=$(output smoke_test_password)" \
+  --query AuthenticationResult.IdToken --output text | tr -d '\r')"
+
 # 1. Reserve the checksum and get a presigned PUT URL
-RESPONSE="$(curl -s -w '\n%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+RESPONSE="$(curl -s -w '\n%{http_code}' -X POST "$API" -H "Authorization: $TOKEN" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"upload.$EXT\"}")"
 STATUS="${RESPONSE##*$'\n'}"
 BODY="${RESPONSE%$'\n'*}"

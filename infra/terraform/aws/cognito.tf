@@ -78,11 +78,38 @@ resource "aws_cognito_user_pool_client" "web" {
   callback_urls                        = local.auth_redirect_urls
   logout_urls                          = local.auth_redirect_urls
 
-  # Only the Hosted UI signs users in; the website itself only refreshes tokens.
-  explicit_auth_flows = ["ALLOW_REFRESH_TOKEN_AUTH"]
+  # Users sign in only through the Hosted UI; the website itself only refreshes
+  # tokens. ADMIN_USER_PASSWORD_AUTH lets the smoke test get a token for its
+  # test user from the command line. It needs AWS credentials (the call is
+  # AdminInitiateAuth), so the public client ID alone cannot use it.
+  explicit_auth_flows = ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_ADMIN_USER_PASSWORD_AUTH"]
 
   # Sign-in errors do not reveal whether an email has an account.
   prevent_user_existence_errors = "ENABLED"
+}
+
+# Test user for scripts/smoke_test.sh, which signs in with ADMIN_USER_PASSWORD_AUTH.
+# The password is written here on purpose so nobody has to set anything up.
+# Anyone who can read this repository can sign in to the website with it, so
+# it is for a coursework deployment only. No email is sent (SUPPRESS) and the
+# address is marked verified, so the account is ready to use at once.
+locals {
+  smoke_test_username = "smoke-test@example.com" # example.com is reserved; nobody receives its mail
+  smoke_test_password = "Smoke-Test-2026"        # meets the default policy: upper, lower, number, symbol
+}
+
+resource "aws_cognito_user" "smoke_test" {
+  user_pool_id   = aws_cognito_user_pool.users.id
+  username       = local.smoke_test_username
+  password       = local.smoke_test_password # a permanent password: no change is asked at first sign-in
+  message_action = "SUPPRESS"
+
+  attributes = {
+    email          = local.smoke_test_username
+    email_verified = "true"
+    given_name     = "Smoke"
+    family_name    = "Test"
+  }
 }
 
 # Managed login pages need a branding style for the app client. The console

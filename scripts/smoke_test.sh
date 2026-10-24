@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end check of the deployed system: tagging queue trigger, CORS preflight,
+# End-to-end check of the deployed system: tagging queue trigger, sign-in of the
+# Cognito test user (its ID token goes with every API call), CORS preflights,
 # POST /upload-url, PUT to the presigned URL, tagging (EventBridge -> SQS ->
 # Lambda -> Cloud Run -> DynamoDB), duplicate rejection, bad requests and the website.
 # Cleans up its test file afterwards.
@@ -65,6 +66,16 @@ ESM_STATE="$(aws lambda list-event-source-mappings --function-name "$(output tag
 check "tagging queue trigger enabled" "$ESM_STATE" "Enabled"
 [ "$ESM_STATE" = "Enabled" ] || echo "      Run terraform apply in infra/terraform/aws to enable it again (see README Troubleshooting)"
 
+# Sign in as the test user (infra/terraform/aws/cognito.tf). Every API call
+# below sends its ID token, like the website; S3 presigned URLs do not need it.
+TOKEN="$(aws cognito-idp admin-initiate-auth --region "$REGION" \
+  --user-pool-id "$(output cognito_user_pool_id)" --client-id "$(output cognito_client_id)" \
+  --auth-flow ADMIN_USER_PASSWORD_AUTH \
+  --auth-parameters "USERNAME=$(output smoke_test_username),PASSWORD=$(output smoke_test_password)" \
+  --query AuthenticationResult.IdToken --output text | tr -d '\r')"
+check "test user signed in (ID token)" "$(echo "$TOKEN" | grep -c '^eyJ')" "1"
+AUTH=(-H "Authorization: $TOKEN")
+
 # 1. CORS preflight
 PREFLIGHT="$(curl -s -i -X OPTIONS "$API" -H "Origin: $ORIGIN" \
   -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type")"
@@ -88,7 +99,7 @@ check "API Gateway error has CORS header" \
 
 # 2. POST /upload-url for a new file
 BODY="$WORK/body.json"
-STATUS="$(curl -s -o "$BODY" -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+STATUS="$(curl -s "${AUTH[@]}" -o "$BODY" -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"smoke.jpg\"}")"
 check "POST new file" "$STATUS" "200"
 URL="$(json "['url']" < "$BODY")"
@@ -124,27 +135,27 @@ TAG_COUNT="$(aws dynamodb query --table-name "$TABLE" --region "$REGION" \
 check "TAG# items written" "$([ "${TAG_COUNT:-0}" -ge 1 ] && echo yes || echo no)" "yes"
 
 # 6. The same file again is a duplicate now
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"smoke.jpg\"}")"
 check "POST same file after READY returns 409" "$STATUS" "409"
 
 # 7. GET /files/{sha256} and GET /files show the tagged file
-STATUS="$(curl -s -o "$WORK/file.json" -w '%{http_code}' "$FILES_API/$SHA")"
+STATUS="$(curl -s "${AUTH[@]}" -o "$WORK/file.json" -w '%{http_code}' "$FILES_API/$SHA")"
 check "GET /files/{sha256}" "$STATUS" "200"
 check "GET /files/{sha256} is READY with tags" \
   "$(python -c "import json,sys; f = json.load(sys.stdin); print(f['status'], bool(f['tags']))" < "$WORK/file.json")" "READY True"
 check "GET /files lists the file" \
-  "$(curl -s "$FILES_API" | python -c "import json,sys; print(any(f['file_id'] == '$SHA' for f in json.load(sys.stdin)['files']))")" "True"
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$FILES_API/$(printf '0%.0s' {1..64})")"
+  "$(curl -s "${AUTH[@]}" "$FILES_API" | python -c "import json,sys; print(any(f['file_id'] == '$SHA' for f in json.load(sys.stdin)['files']))")" "True"
+STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' "$FILES_API/$(printf '0%.0s' {1..64})")"
 check "GET /files/{unknown} returns 404" "$STATUS" "404"
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$FILES_API/abc")"
+STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' "$FILES_API/abc")"
 check "GET /files/{bad sha256} returns 400" "$STATUS" "400"
 
 # 8. Bad requests
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d '{"sha256": "abc", "filename": "a.jpg"}')"
 check "POST bad sha256" "$STATUS" "400"
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
+STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"a.gif\"}")"
 check "POST unsupported type" "$STATUS" "400"
 

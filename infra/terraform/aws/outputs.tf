@@ -64,6 +64,15 @@ output "cognito_domain_url" {
   value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com"
 }
 
+# The smoke test's Cognito user (cognito.tf).
+output "smoke_test_username" {
+  value = aws_cognito_user.smoke_test.username
+}
+
+output "smoke_test_password" {
+  value = local.smoke_test_password
+}
+
 # Open in a browser to try sign-up/sign-in before the website handles the code.
 output "cognito_login_url" {
   value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com/oauth2/authorize?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=${urlencode(local.auth_redirect_urls[0])}"

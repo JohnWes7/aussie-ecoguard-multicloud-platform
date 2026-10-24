@@ -152,6 +152,7 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
 | `aws/storage.tf` | Media and website buckets, DynamoDB table |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
 | `aws/api.tf` | REST API routes and the `upload-url` and `files` Lambdas |
+| `aws/cognito.tf` | Cognito user pool, app client, sign-in domain and the smoke test's user |
 | `aws/website.tf` | Uploads `web/` and `config.js` |
 | `aws/outputs.tf` | URLs and names printed after `apply`, read by the scripts |
 | `gcp/versions.tf` | Terraform and provider versions, GCP project and region, default labels |
@@ -171,6 +172,8 @@ Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that T
 | AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
 | AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files` (role: `LabRole`) |
 | AWS | REST API | `aussie-ecoguard-api`, stage `api` |
+| AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email |
+| AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
 | AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
 | GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4` (next to AWS `us-east-1`), public |
@@ -350,7 +353,7 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It checks that the tagging queue trigger is enabled, the CORS preflights of all three routes, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 

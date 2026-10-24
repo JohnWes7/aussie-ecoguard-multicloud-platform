@@ -9,6 +9,7 @@
 // The API is what refuses requests without a valid token.
 //
 // Other scripts call:
+//   const response = await apiFetch("/files");   // fetch() to our API, with the token
 //   const token = await getIdToken();   // the ID token, refreshed if needed
 //   signOut();
 
@@ -46,6 +47,18 @@ async function startAuth() {
 async function getIdToken() {
   if (!(await authReady)) throw new Error("Not signed in");
   return validIdToken();
+}
+
+// fetch() for our API: `path` is appended to CONFIG.apiUrl (e.g. "/files") and
+// the ID token goes in the Authorization header, where API Gateway's Cognito
+// authorizer looks for it (the raw token, no "Bearer " prefix). Not for the
+// presigned S3 URLs: those carry their own signature, and S3 rejects a second one.
+async function apiFetch(path, options = {}) {
+  const token = await getIdToken();
+  return fetch(`${window.CONFIG.apiUrl}${path}`, {
+    ...options,
+    headers: { ...options.headers, Authorization: token },
+  });
 }
 
 // Returns a valid ID token. Never returns without one: it redirects to the

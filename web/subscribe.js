@@ -104,7 +104,7 @@
       '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Subscribing...';
     result.hidden = true;
     try {
-      const response = await fetch(`${window.CONFIG.apiUrl}/subscriptions`, {
+      const response = await apiFetch("/subscriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tags }),

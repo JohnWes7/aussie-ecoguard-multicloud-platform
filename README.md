@@ -354,8 +354,9 @@ It reads the endpoint from the Terraform outputs (so run it on the machine that 
 
 ### Website
 
-Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.amazonaws.com/index.html`). The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. It has two independent parts that share no data:
+Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.amazonaws.com/index.html`). The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. Besides sign-in, it has two independent parts that share no data:
 
+- **Sign-in** (`web/auth.js`) runs before the other scripts and keeps the page hidden until the user is signed in with Cognito. Every API call goes through its `apiFetch(path, options)`, a `fetch()` that adds the ID token in the `Authorization` header; **use it for any new API call**, or the request will be refused once the API requires sign-in. Do not use it for the presigned S3 URLs, which carry their own signature.
 - **Upload panel** (`web/upload.js`) only talks to `POST /upload-url` and S3. For each chosen file it computes the SHA-256, reserves it, and PUTs it to S3 with a progress bar, then shows "Uploaded", "Already uploaded" (409) or the error. After an upload it fires a `files-changed` browser event that carries no data.
 - **Library** (`web/library.js`) only talks to the files API. It loads `GET /files` when the page opens, on **Refresh** and on `files-changed`, and shows one card per file: preview (image, or a video player), name, date, and the status or the tags as badges. Cards that are not `READY` or `FAILED` yet are polled with `GET /files/{sha256}` every 3 seconds (up to 15 minutes), so a new upload goes Uploading → Queued for tagging → Detecting species → tags. A card is only redrawn when that stage changes.
 

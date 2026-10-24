@@ -54,7 +54,7 @@ async function uploadFile(file, row) {
   row.showHash(sha256);
 
   row.status("Requesting upload URL...");
-  const response = await fetch(`${window.CONFIG.apiUrl}/upload-url`, {
+  const response = await apiFetch("/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sha256, filename: file.name }),

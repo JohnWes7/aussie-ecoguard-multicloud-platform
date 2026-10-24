@@ -27,7 +27,7 @@ async function loadFiles() {
   loading = true;
   setLoading(true);
   try {
-    const response = await fetch(`${window.CONFIG.apiUrl}/files`);
+    const response = await apiFetch("/files");
     if (!response.ok) throw new Error(`GET /files returned ${response.status}`);
     const { files } = await response.json();
     libraryError.hidden = true;
@@ -85,7 +85,7 @@ async function poll(fileId) {
   try {
     while (Date.now() - start < POLL_LIMIT) {
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
-      const response = await fetch(`${window.CONFIG.apiUrl}/files/${fileId}`);
+      const response = await apiFetch(`/files/${fileId}`);
       const card = grid.querySelector(`[data-file-id="${fileId}"]`);
       if (response.status === 404) { // e.g. an abandoned reservation that TTL removed
         card?.remove();

@@ -90,6 +90,12 @@ resource "aws_lambda_function" "tagging" {
       INFERENCE_URL = var.inference_url
       MAX_ATTEMPTS  = "3"   # must stay below the queue's maxReceiveCount
       INFER_TIMEOUT = "300" # = Cloud Run timeout (../gcp/gcp.tf); a cold start (~1 min) plus a 3-minute video (18 frames)
+      # The machine client the function signs in as to get a token for Cloud Run
+      # (cognito.tf). The secret sits in plain text here and in the Lambda
+      # console; Secrets Manager would hide it, but was left out to keep it simple.
+      COGNITO_TOKEN_URL     = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com/oauth2/token"
+      COGNITO_CLIENT_ID     = aws_cognito_user_pool_client.tagging.id
+      COGNITO_CLIENT_SECRET = aws_cognito_user_pool_client.tagging.client_secret
     }
   }
 }

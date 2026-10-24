@@ -172,7 +172,7 @@ Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that T
 | AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
 | AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files` (role: `LabRole`) |
 | AWS | REST API | `aussie-ecoguard-api`, stage `api` |
-| AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email |
+| AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email. A second, machine client `aussie-ecoguard-tagging` (client credentials, scope `aussie-ecoguard/infer` from resource server `aussie-ecoguard`) gives the `tagging` Lambda its tokens for Cloud Run; its secret is in the Lambda's environment variables |
 | AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
 | AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
@@ -253,7 +253,7 @@ S3 Object Created (uploads/) → EventBridge rule → SQS queue → tagging Lamb
 ```
 
 1. The `tagging` Lambda moves `META` from `PENDING` to `PROCESSING` and removes `expires_at`, so TTL never deletes a stored file. Objects without a `META` item (not uploaded through `/upload-url`) and files that are already `READY` or `FAILED` are skipped.
-2. It sends Cloud Run a presigned GET URL for the object and the `file_type`.
+2. It sends Cloud Run a presigned GET URL for the object and the `file_type`, with a Cognito access token in `Authorization: Bearer ...`. The Lambda gets the token as the machine client `aussie-ecoguard-tagging` (OAuth client credentials, scope `aussie-ecoguard/infer`) and reuses it until 5 minutes before it expires (tokens last 1 hour; Cognito bills each request). If no token can be had, the file is retried like any temporary error.
 3. On success, one transaction sets `META` to `READY` (with `attributes`, `model`, and `thumb_url` for images) and writes one `TAG#<species>` item per species, e.g. `{tag: "fox", tag_count: 2}`. This usually takes 10–20 seconds after the upload, or about a minute when Cloud Run has to start an instance first.
 
 The queue limits tagging to 2 files at a time, the same as Cloud Run's instance limit, so a burst of uploads waits in the queue instead of overloading Cloud Run.

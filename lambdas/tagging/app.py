@@ -7,7 +7,9 @@ body["detail"]["object"]["key"] and looks like "uploads/<sha256>".
 Steps for one file:
   1. Move META from PENDING to PROCESSING (conditional). Files without a META
      item (not uploaded through upload-url) or already READY / FAILED are skipped.
-  2. Send a presigned GET URL to Cloud Run POST /infer.
+  2. Send a presigned GET URL to Cloud Run POST /infer, with a Cognito access
+     token: the function signs in as the machine client aussie-ecoguard-tagging
+     (client credentials) and keeps the token until shortly before it expires.
   3. Success: one transaction sets META to READY and writes a TAG#<species>
      item per species.
      Failure: META becomes FAILED, so the user can upload the file again.
@@ -21,10 +23,13 @@ gets another delivery. Only if every delivery crashes does the message move to
 the dead-letter queue, leaving META in PROCESSING until it is redriven.
 """
 
+import base64
 import json
 import os
 import re
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -38,6 +43,17 @@ INFERENCE_URL = os.environ["INFERENCE_URL"]  # Cloud Run service URL, no trailin
 MAX_ATTEMPTS = int(os.environ.get("MAX_ATTEMPTS", "3"))  # below the queue's maxReceiveCount (5)
 INFER_TIMEOUT = int(os.environ.get("INFER_TIMEOUT", "300"))  # seconds, Cloud Run's own limit
 GET_URL_EXPIRES = 300  # seconds Cloud Run has to start downloading the file
+
+# Cognito machine client (infra/terraform/aws/cognito.tf) for the Cloud Run token.
+COGNITO_TOKEN_URL = os.environ["COGNITO_TOKEN_URL"]  # https://<domain>/oauth2/token
+COGNITO_CLIENT_ID = os.environ["COGNITO_CLIENT_ID"]
+COGNITO_CLIENT_SECRET = os.environ["COGNITO_CLIENT_SECRET"]
+TOKEN_SCOPE = "aussie-ecoguard/infer"
+TOKEN_MARGIN = 300  # seconds; get a new token this long before the old one expires
+
+# Kept between invocations while Lambda reuses this container, so Cognito is
+# asked about once an hour instead of once per file (each request is billed).
+_token = {"value": None, "expires_at": 0}
 
 KEY_RE = re.compile(r"^uploads/([0-9a-f]{64})$")
 
@@ -128,7 +144,7 @@ def call_inference(key, file_type):
     request = urllib.request.Request(
         f"{INFERENCE_URL}/infer",
         data=json.dumps({"url": url, "file_type": file_type}).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {get_token()}"},
         method="POST",
     )
     # Error messages never include `url`: it carries temporary credentials.
@@ -146,6 +162,36 @@ def call_inference(key, file_type):
         raise TemporaryError(f"inference timed out after {INFER_TIMEOUT}s")
 
     return check_result(body)
+
+
+def get_token():
+    """A Cognito access token for Cloud Run (OAuth client credentials).
+
+    Cognito decides the token's scope and expiry and signs them, so this only
+    asks and stores. Any failure is temporary: SQS retries the file later.
+    """
+    if time.time() < _token["expires_at"] - TOKEN_MARGIN:
+        return _token["value"]
+
+    credentials = base64.b64encode(f"{COGNITO_CLIENT_ID}:{COGNITO_CLIENT_SECRET}".encode()).decode()
+    request = urllib.request.Request(
+        COGNITO_TOKEN_URL,
+        data=urllib.parse.urlencode({"grant_type": "client_credentials", "scope": TOKEN_SCOPE}).encode(),
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": f"Basic {credentials}",  # client ID and secret, like a username and password
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = json.load(response)
+    except (urllib.error.URLError, TimeoutError) as e:  # HTTPError is a URLError too
+        raise TemporaryError(f"could not get a Cognito token: {e}")
+
+    _token["value"] = body["access_token"]
+    _token["expires_at"] = time.time() + body["expires_in"]
+    return _token["value"]
 
 
 def error_text(http_error):

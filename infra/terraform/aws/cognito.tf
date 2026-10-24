@@ -88,6 +88,45 @@ resource "aws_cognito_user_pool_client" "web" {
   prevent_user_existence_errors = "ENABLED"
 }
 
+# ---------- Machine-to-machine: tagging Lambda -> Cloud Run ----------
+#
+# The tagging Lambda runs on S3 events, with no user and so no user token.
+# It signs in as this "machine" client instead (OAuth client credentials:
+# client ID + secret, no username) and gets an access token from Cognito,
+# which Cloud Run checks like any Cognito token. The token's scope and expiry
+# are set by Cognito and covered by its signature, so the Lambda cannot change them.
+
+# Defines the scope aussie-ecoguard/infer. Only clients allowed this scope
+# (the tagging client below, not the website's) can get a token that carries it,
+# and Cloud Run's /infer requires it. That is what keeps out self-registered
+# users, whose tokens are signed by the same pool.
+resource "aws_cognito_resource_server" "api" {
+  user_pool_id = aws_cognito_user_pool.users.id
+  identifier   = "aussie-ecoguard"
+  name         = "aussie-ecoguard"
+
+  scope {
+    scope_name        = "infer"
+    scope_description = "Call the inference service (Cloud Run /infer)"
+  }
+}
+
+resource "aws_cognito_user_pool_client" "tagging" {
+  name         = "aussie-ecoguard-tagging"
+  user_pool_id = aws_cognito_user_pool.users.id
+
+  # The secret is the machine's password. Only the tagging Lambda gets it.
+  generate_secret = true
+
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["client_credentials"]
+  allowed_oauth_scopes                 = aws_cognito_resource_server.api.scope_identifiers # ["aussie-ecoguard/infer"]
+
+  # Client credentials uses none of these; set so AWS does not add its defaults.
+  explicit_auth_flows           = ["ALLOW_REFRESH_TOKEN_AUTH"]
+  prevent_user_existence_errors = "ENABLED"
+}
+
 # Test user for scripts/smoke_test.sh, which signs in with ADMIN_USER_PASSWORD_AUTH.
 # The password is written here on purpose so nobody has to set anything up.
 # Anyone who can read this repository can sign in to the website with it, so

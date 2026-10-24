@@ -144,6 +144,12 @@ done
 check "tagging finished (META status)" "$STATE" "READY"
 [ "$STATE" != "FAILED" ] || echo "      error: $(meta error.S)"
 check "expires_at removed (no TTL on stored files)" "$(meta expires_at.N)" "None"
+# owner is the "sub" claim of the token (its middle part is base64url JSON).
+SUB="$(echo "$TOKEN" | cut -d. -f2 | python -c "
+import base64, json, sys
+s = sys.stdin.read().strip()
+print(json.loads(base64.urlsafe_b64decode(s + '=' * (-len(s) % 4)))['sub'])")"
+check "META owner is the test user" "$(meta owner.S)" "$SUB"
 TAG_COUNT="$(aws dynamodb query --table-name "$TABLE" --region "$REGION" \
   --key-condition-expression "file_id = :id AND begins_with(sk, :tag)" \
   --expression-attribute-values "{\":id\":{\"S\":\"$SHA\"},\":tag\":{\"S\":\"TAG#\"}}" \

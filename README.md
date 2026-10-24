@@ -226,11 +226,12 @@ Allowed extensions: `jpg` / `jpeg`, `png`, `mp4`, `mov`.
 |---|---|---|
 | 200 | Upload allowed | `{file_id, key, url, headers, expires_in}` |
 | 400 | Bad `sha256`, unsupported extension or invalid JSON | `{error}` |
+| 401 | No valid ID token (answered by API Gateway's Cognito authorizer, see [API](#api)) | `{message}` |
 | 409 | File already uploaded (`PROCESSING`) or done (`READY`) | `{error, file_id, status, key}` |
 
 After a 200, `PUT` the file to `url` with exactly the returned `headers` (`Content-Type` and `x-amz-checksum-sha256`). Both are part of the signature, and S3 rejects the upload if the content does not match the SHA-256. The URL is valid for 15 minutes.
 
-The object key is `uploads/<sha256>`, with no extension: it depends only on the content, so the same bytes uploaded as `fox.jpg` and `fox.png` end up as one object. The extension only decides the file type, which is stored as the object's `Content-Type` and as `file_type` (`image` / `video`) in the `META` item.
+The object key is `uploads/<sha256>`, with no extension: it depends only on the content, so the same bytes uploaded as `fox.jpg` and `fox.png` end up as one object. The extension only decides the file type, which is stored as the object's `Content-Type` and as `file_type` (`image` / `video`) in the `META` item. `META` also gets `owner`, the Cognito `sub` (user ID) of whoever reserved the file last, taken from the token's claims that the authorizer passes to the Lambda. It is only recorded; any signed-in user may upload, see or change any file.
 
 The file's `META` item in DynamoDB moves through these states:
 
@@ -353,7 +354,7 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 
@@ -438,10 +439,11 @@ curl -i -X PUT -T fox.jpg \
   "<url>"
 ```
 
-You can also invoke the function in the Lambda console (**Test** tab) with this event, which has the same shape API Gateway sends:
+You can also invoke the function in the Lambda console (**Test** tab) with this event, which has the same shape API Gateway sends after the authorizer accepted a token (without `requestContext` the function answers 401):
 
 ```json
-{"body": "{\"sha256\": \"<HASH>\", \"filename\": \"fox.jpg\"}"}
+{"body": "{\"sha256\": \"<HASH>\", \"filename\": \"fox.jpg\"}",
+ "requestContext": {"authorizer": {"claims": {"sub": "console-test"}}}}
 ```
 
 ## Tear down

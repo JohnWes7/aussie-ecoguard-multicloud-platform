@@ -9,13 +9,17 @@ Deduplication: before handing out a URL we write a META item with status
 PENDING. META status lifecycle:
   PENDING     URL issued, file not in S3 yet. Any new request just gets a
               fresh URL: the URL is bound to the checksum, so every upload
-              writes the same bytes to the same key.
-              TODO(cognito): only re-issue to the same owner, 409 for others.
+              writes the same bytes to the same key. Files are shared, so
+              this goes to any signed-in user, who becomes the owner.
   PROCESSING  file is in S3, set by the tagging Lambda -> 409
   READY       tagged and searchable -> 409
   FAILED      tagging failed -> a new upload is allowed
 expires_at is a DynamoDB TTL attribute that removes abandoned PENDING items;
 tagging removes it when the file reaches PROCESSING.
+
+owner is the Cognito "sub" (user ID) of whoever reserved the file last. It is
+only recorded: every signed-in user can see and change every file
+(architecture/README.md §2).
 """
 
 import base64
@@ -51,6 +55,14 @@ s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
 
 
 def handler(event, context):
+    # API Gateway's Cognito authorizer has already checked the ID token and
+    # passes its claims on. They are missing only when the function is invoked
+    # some other way, e.g. a test event in the Lambda console.
+    claims = (event.get("requestContext") or {}).get("authorizer", {}).get("claims", {})
+    owner = claims.get("sub")
+    if not owner:
+        return response(401, {"error": "not signed in"})
+
     try:
         body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
@@ -87,7 +99,7 @@ def handler(event, context):
                 # another name, the latest name wins.
                 "filename": filename[:255],
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                # TODO(cognito): add "owner" from the JWT "sub" claim
+                "owner": owner,
             },
             ConditionExpression="attribute_not_exists(file_id) OR #status IN (:pending, :failed)",
             ExpressionAttributeNames={"#status": "status"},  # reserved word

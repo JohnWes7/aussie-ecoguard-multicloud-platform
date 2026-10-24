@@ -18,9 +18,17 @@ def app(aws):
     return load_lambda("upload_url")
 
 
-def call(app, body):
-    """Invoke the handler the way API Gateway's proxy integration does."""
-    response = app.handler({"body": json.dumps(body)}, None)
+def event(raw_body, sub="user-1"):
+    """An event as API Gateway's proxy integration sends it, after the Cognito
+    authorizer accepted the token of user `sub`."""
+    return {
+        "body": raw_body,
+        "requestContext": {"authorizer": {"claims": {"sub": sub, "email": f"{sub}@example.com"}}},
+    }
+
+
+def call(app, body, sub="user-1"):
+    response = app.handler(event(json.dumps(body), sub), None)
     return response["statusCode"], json.loads(response["body"])
 
 
@@ -124,10 +132,43 @@ def test_invalid_request_returns_400(app, table, body):
 
 
 def test_body_that_is_not_json_returns_400(app, table):
-    response = app.handler({"body": "{"}, None)
+    response = app.handler(event("{"), None)
     assert response["statusCode"] == 400
 
 
 def test_responses_allow_cors(app, table):
-    response = app.handler({"body": json.dumps({"sha256": SHA, "filename": "fox.jpg"})}, None)
+    response = app.handler(event(json.dumps({"sha256": SHA, "filename": "fox.jpg"})), None)
     assert response["headers"]["Access-Control-Allow-Origin"] == "*"
+
+
+def test_owner_is_the_cognito_sub(app, table):
+    call(app, {"sha256": SHA, "filename": "fox.jpg"}, sub="user-1")
+
+    assert get_meta(table)["owner"] == "user-1"
+
+
+def test_pending_file_goes_to_another_user_who_becomes_owner(app, table):
+    # Files are shared: owner is only recorded, so nobody is refused.
+    call(app, {"sha256": SHA, "filename": "fox.jpg"}, sub="user-1")
+    status, _ = call(app, {"sha256": SHA, "filename": "fox.jpg"}, sub="user-2")
+
+    assert status == 200
+    assert get_meta(table)["owner"] == "user-2"
+
+
+def test_uploaded_file_keeps_its_owner(app, table):
+    call(app, {"sha256": SHA, "filename": "fox.jpg"}, sub="user-1")
+    set_status(table, "READY")
+
+    status, _ = call(app, {"sha256": SHA, "filename": "fox.jpg"}, sub="user-2")
+
+    assert status == 409
+    assert get_meta(table)["owner"] == "user-1"
+
+
+def test_event_without_cognito_claims_returns_401(app, table):
+    # Only possible when the function is invoked without API Gateway.
+    response = app.handler({"body": json.dumps({"sha256": SHA, "filename": "fox.jpg"})}, None)
+
+    assert response["statusCode"] == 401
+    assert "Item" not in table.get_item(Key={"file_id": SHA, "sk": "META"})

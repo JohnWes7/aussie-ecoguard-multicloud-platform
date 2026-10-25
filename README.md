@@ -330,6 +330,26 @@ Cloud Run downloads the file itself from the presigned URL instead of receiving 
 
 `tags` uses the labels in `infra/model/config.json`: the six target species (`fox`, `rabbit`, `feral pig`, `cane toad`, `cat`, `dog`), 16 other common animals (e.g. `kangaroo`, `deer`, `bird`) and `other animal` for an animal the models could not name. Counts are the boxes MegaDetector found. `attributes` only holds colours of cats and dogs. `model` is the `model_label` of the loaded config. The pipeline and its limits are described in [Model selection](#model-selection) and `inference/model.py`.
 
+`POST /detect` is for the queries that start from a file (Spec §4.3: find files with the same tags as a file; find a lost pet by its photo). The website sends the image itself as the request body and gets the same JSON as `/infer` back; it then searches with those tags. The image is only held in memory and never stored. It needs the signed-in user's ID token (`getIdToken()` in `web/auth.js`) from a trusted user pool; the machine client's token is refused. Images only (JPEG or PNG, at most 30 MB; Cloud Run refuses request bodies over 32 MiB anyway).
+
+```
+POST /detect
+Authorization: Bearer <ID token>
+Content-Type: image/jpeg            (or image/png)
+<the image bytes>
+```
+
+| Status | Meaning | Body |
+|---|---|---|
+| 200 | Done | `{"tags": {"cat": 1}, "attributes": ["orange"], "model": "..."}` |
+| 401 | No token; or expired, not validly signed, or from a user pool that is not trusted | `{"error": "..."}` |
+| 403 | A valid token that is not a user's ID token (e.g. the machine client's) | `{"error": "a signed-in user's ID token is required"}` |
+| 413 | Larger than 30 MB | `{"error": "file is larger than 30 MB"}` |
+| 415 | `Content-Type` is not `image/jpeg` or `image/png` (e.g. a video) | `{"error": "send a JPEG or PNG image, not video/mp4"}` |
+| 422 | The bytes are not a valid image | `{"error": "file is not a valid image"}` |
+
+The website calls it from another origin, so the service answers CORS preflights (FastAPI's `CORSMiddleware`, any origin, `POST` with `Authorization` and `Content-Type`) and adds `Access-Control-Allow-Origin` to every answer to the website, including 401s. Requests without an `Origin` header, such as the `tagging` Lambda's, are not affected.
+
 `GET /health` returns `{"status": "ok", "model": "md5a+speciesnet-4.0.3a+clip-b32-v2"}`.
 
 `GET /docs` is the interactive API documentation that FastAPI generates from the request and response types in `inference/main.py` (`/openapi.json` has the raw schema).
@@ -359,7 +379,7 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 

@@ -121,6 +121,20 @@ check "Cloud Run /infer without token returns 401" "$(curl -s -o /dev/null -w '%
 check "Cloud Run /infer with a user's token returns 403" "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   "$INFERENCE/infer" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BAD_BODY")" "403"
 
+# 1c. Cloud Run POST /detect: the website sends an image itself with the user's
+#     ID token and gets its tags back; nothing is stored. First the browser's
+#     CORS preflight, then the cat photo (up to 3 minutes for a cold start).
+PREFLIGHT="$(curl -s -i -X OPTIONS "$INFERENCE/detect" -H "Origin: $ORIGIN" \
+  -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: authorization,content-type")"
+check "Cloud Run /detect preflight status" "$(echo "$PREFLIGHT" | head -1 | cut -d' ' -f2)" "200"
+check "Cloud Run /detect without token returns 401" "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "$INFERENCE/detect" -H "Content-Type: image/jpeg" --data-binary @"$FILE")" "401"
+STATUS="$(curl -s -m 180 -o "$WORK/detect.json" -w '%{http_code}' -X POST "$INFERENCE/detect" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: image/jpeg" --data-binary @"$FILE")"
+check "Cloud Run /detect with the user's token" "$STATUS" "200"
+check "Cloud Run /detect finds the cat" \
+  "$(python -c "import json,sys; print('cat' in json.load(sys.stdin).get('tags', {}))" < "$WORK/detect.json" 2>/dev/null)" "True"
+
 # 2. POST /upload-url for a new file
 BODY="$WORK/body.json"
 STATUS="$(curl -s "${AUTH[@]}" -o "$BODY" -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \

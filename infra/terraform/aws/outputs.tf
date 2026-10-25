@@ -102,3 +102,7 @@ output "notifications_topic_arn" {
 output "subscribe_function_name" {
   value = aws_lambda_function.subscribe.function_name
 }
+
+output "notify_function_name" {
+  value = aws_lambda_function.notify.function_name
+}

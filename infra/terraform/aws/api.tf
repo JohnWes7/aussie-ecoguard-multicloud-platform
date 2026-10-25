@@ -334,6 +334,103 @@ resource "aws_api_gateway_gateway_response" "default_5xx" {
   }
 }
 
+# ---------- POST /tags -> edit_tags function ----------
+
+data "archive_file" "edit_tags" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../lambdas/edit_tags"
+  output_path = "${path.module}/build/edit_tags.zip"
+}
+
+resource "aws_lambda_function" "edit_tags" {
+  function_name    = "aussie-ecoguard-edit-tags"
+  runtime          = "python3.12"
+  handler          = "app.handler"
+  filename         = data.archive_file.edit_tags.output_path
+  source_code_hash = data.archive_file.edit_tags.output_base64sha256
+  role             = local.lab_role
+  memory_size      = 128
+  timeout          = 10
+
+  environment {
+    variables = {
+      TABLE_NAME = aws_dynamodb_table.media.name
+    }
+  }
+}
+
+resource "aws_api_gateway_resource" "tags" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "tags"
+}
+
+resource "aws_api_gateway_method" "tags_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.tags.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "tags_post" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.tags.id
+  http_method             = aws_api_gateway_method.tags_post.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = aws_lambda_function.edit_tags.invoke_arn
+}
+
+resource "aws_api_gateway_method" "tags_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.tags.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "tags_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.tags.id
+  http_method = aws_api_gateway_method.tags_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "tags_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.tags.id
+  http_method = aws_api_gateway_method.tags_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "tags_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.tags.id
+  http_method = aws_api_gateway_method.tags_options.http_method
+  status_code = aws_api_gateway_method_response.tags_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+  }
+  depends_on = [aws_api_gateway_integration.tags_options]
+}
+
+resource "aws_lambda_permission" "edit_tags" {
+  function_name = aws_lambda_function.edit_tags.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/POST/tags"
+}
+
 # ---------- Deployment and stage ----------
 
 # A deployment is a snapshot of the API; the stage "api" serves it at
@@ -376,6 +473,13 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration_response.file_options.id,
       aws_api_gateway_gateway_response.default_4xx.id,
       aws_api_gateway_gateway_response.default_5xx.id,
+      aws_api_gateway_resource.tags.id,
+      aws_api_gateway_method.tags_post.id,
+      aws_api_gateway_integration.tags_post.id,
+      aws_api_gateway_method.tags_options.id,
+      aws_api_gateway_integration.tags_options.id,
+      aws_api_gateway_method_response.tags_options.id,
+      aws_api_gateway_integration_response.tags_options.id,
     ]))
   }
 

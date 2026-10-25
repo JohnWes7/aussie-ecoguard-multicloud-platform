@@ -16,10 +16,10 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | Cloud Run inference service: MegaDetector → SpeciesNet → CLIP (see [Model selection](#model-selection)), images only | Deployed, no auth yet |
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
-| Thumbnails: `thumbnail` Lambda (EventBridge rule → Pillow → `thumbnails/<sha256>.jpg`), shown on the library cards | Built and unit-tested, not deployed yet |
+| Thumbnails: `thumbnail` Lambda (EventBridge rule → Pillow → `thumbnails/<sha256>.jpg`), shown on the library cards | Deployed |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
-| `POST /subscriptions` (subscribe to email notifications per species, SNS) | Merged, not deployed yet. Cognito sign-in required |
-| Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | Merged, not deployed yet |
+| `POST /subscriptions` (subscribe to email notifications per species, SNS) | Deployed, Cognito sign-in required |
+| Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | Deployed |
 
 ## Model selection
 

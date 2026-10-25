@@ -17,8 +17,8 @@ Each area has one owner, who builds its backend **and** its part of the website.
 | Authentication | Yijiang Luo | §3 | Done (see Done below). Left: once every member has sent their Cognito user pool ID, switch the shared Cloud Run from trusting any pool back to that list |
 | Query API | Leon | §4.3 | Search by tags with minimum counts (AND), by species, lost pet (species / colour, recent sightings), thumbnail URL → original URL, search by an uploaded file (the file is never stored), add / remove tags on many files (`"operation": 1` / `0`), delete files (original, thumbnail and database items). Already there: finding the species in an uploaded file without storing it is `detectFile(file)` in `web/detect.js` (Cloud Run `POST /detect`, README § Website), so the file-based searches and the lost-pet photo search only need to search with the tags it returns; `POST /tags` (`edit_tags`) is merged |
 | Chatbot | Leon | §4.3 | Lex bot that understands questions like "show me all fox photos found yesterday" or "find a lost orange cat", calls the query code and returns links to the media |
-| Email notifications | Thanh Tri Le | §4.4 | Done (see Done below). Left: after `terraform apply`, check that a real email arrives |
-| Thumbnails | Thanh Tri Le | §4.2 | Done (see Done below). Left: review and merge, then `terraform apply` (needs `pip3`, README § Prerequisites) and the smoke test. Search results can show `thumb_url` the same way `GET /files` does |
+| Email notifications | Thanh Tri Le | §4.4 | Done (see Done below) |
+| Thumbnails | Thanh Tri Le | §4.2 | Done (see Done below) |
 | Website | Everyone | §5 | Each owner adds the UI their own backend features need (see below) |
 | Report and demo | Everyone | §6 | Team report (max 1000 words: services and why, pros and cons, cost), demo script, screenshots. Individual reports are written alone |
 
@@ -89,6 +89,7 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-25 | Thanh Tri Le | Email notifications and thumbnails tested on AWS: `./scripts/smoke_test.sh` passed (including the thumbnail checks), a real notification email arrived for a cat photo and none for a photo without animals, and the library cards show thumbnails |
 | 2026-10-25 | Thanh Tri Le | Email notifications done: `subscribe` and `notify` Lambdas merged. Thumbnails done, merge request open. Both need `terraform apply` (thumbnails needs `pip3` on PATH for the Pillow layer). Both of my areas are now done |
 | 2026-10-25 | Yijiang Luo | `POST /detect` and `web/detect.js` done: Leon's search by an uploaded file and lost pet by photo call `detectFile(file)`, then search with the returned tags. Leon's `POST /tags` merged and deployed |
 | 2026-10-24 | Yijiang Luo | Authentication done: every API route and Cloud Run now need a Cognito token. **Everyone:** pull, run `terraform -chdir=infra/terraform/aws apply`, and send Yijiang the output of `terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id`, so the shared Cloud Run trusts your deployment (it accepts any pool until everyone has sent theirs). New API calls in `web/` must use `apiFetch()` (README § Website) |

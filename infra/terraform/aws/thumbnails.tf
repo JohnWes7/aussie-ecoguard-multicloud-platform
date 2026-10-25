@@ -31,7 +31,7 @@ resource "terraform_data" "pillow_layer" {
   # Layer files must be under python/ in the zip. No shell operators, so the
   # command works in cmd.exe on Windows and sh on macOS/Linux.
   provisioner "local-exec" {
-    command = "pip3 install pillow==${self.input} --platform manylinux_2_28_x86_64 --implementation cp --python-version 3.12 --only-binary=:all: --no-compile --upgrade --target \"${local.pillow_layer_dir}/python\""
+    command = "pip3 install pillow==${self.input} --no-user --platform manylinux_2_28_x86_64 --implementation cp --python-version 3.12 --only-binary=:all: --no-compile --upgrade --target ${local.pillow_layer_dir}/python"
   }
 }
 

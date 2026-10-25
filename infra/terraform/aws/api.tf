@@ -629,6 +629,104 @@ resource "aws_lambda_permission" "delete_files" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/POST/delete"
 }
 
+# ---------- POST /search -> search function ----------
+
+data "archive_file" "search" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../lambdas/search"
+  output_path = "${path.module}/build/search.zip"
+}
+
+resource "aws_lambda_function" "search" {
+  function_name    = "aussie-ecoguard-search"
+  runtime          = "python3.12"
+  handler          = "app.handler"
+  filename         = data.archive_file.search.output_path
+  source_code_hash = data.archive_file.search.output_base64sha256
+  role             = local.lab_role
+  memory_size      = 128
+  timeout          = 10
+
+  environment {
+    variables = {
+      TABLE_NAME  = aws_dynamodb_table.media.name
+      BUCKET_NAME = terraform_data.media_bucket.output
+    }
+  }
+}
+
+resource "aws_api_gateway_resource" "search" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "search"
+}
+
+resource "aws_api_gateway_method" "search_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.search.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "search_post" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.search.id
+  http_method             = aws_api_gateway_method.search_post.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = aws_lambda_function.search.invoke_arn
+}
+
+resource "aws_api_gateway_method" "search_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.search.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "search_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.search.id
+  http_method = aws_api_gateway_method.search_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "search_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.search.id
+  http_method = aws_api_gateway_method.search_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "search_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.search.id
+  http_method = aws_api_gateway_method.search_options.http_method
+  status_code = aws_api_gateway_method_response.search_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+  }
+  depends_on = [aws_api_gateway_integration.search_options]
+}
+
+resource "aws_lambda_permission" "search" {
+  function_name = aws_lambda_function.search.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/POST/search"
+}
+
 # ---------- Deployment and stage ----------
 
 # A deployment is a snapshot of the API; the stage "api" serves it at
@@ -692,6 +790,13 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.delete_options.id,
       aws_api_gateway_method_response.delete_options.id,
       aws_api_gateway_integration_response.delete_options.id,
+      aws_api_gateway_resource.search.id,
+      aws_api_gateway_method.search_post.id,
+      aws_api_gateway_integration.search_post.id,
+      aws_api_gateway_method.search_options.id,
+      aws_api_gateway_integration.search_options.id,
+      aws_api_gateway_method_response.search_options.id,
+      aws_api_gateway_integration_response.search_options.id,
     ]))
   }
 

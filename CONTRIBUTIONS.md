@@ -14,8 +14,8 @@ Each area has one owner, who builds its backend **and** its part of the website.
 
 | Area | Owner | Spec | What the spec asks for |
 |---|---|---|---|
-| Authentication | Yijiang Luo | §3 | Cognito sign-up (email, first name, last name, password, verification email) and sign-in (Hosted UI); every API route needs a token; sign out; requests from AWS to Cloud Run are authorised |
-| Query API | Leon | §4.3 | Search by tags with minimum counts (AND), by species, lost pet (species / colour, recent sightings), thumbnail URL → original URL, search by an uploaded file (the file is never stored), add / remove tags on many files (`"operation": 1` / `0`), delete files (original, thumbnail and database items) |
+| Authentication | Yijiang Luo | §3 | Done (see Done below). Left: once every member has sent their Cognito user pool ID, switch the shared Cloud Run from trusting any pool back to that list |
+| Query API | Leon | §4.3 | Search by tags with minimum counts (AND), by species, lost pet (species / colour, recent sightings), thumbnail URL → original URL, search by an uploaded file (the file is never stored), add / remove tags on many files (`"operation": 1` / `0`), delete files (original, thumbnail and database items). Already there: finding the species in an uploaded file without storing it is `detectFile(file)` in `web/detect.js` (Cloud Run `POST /detect`, README § Website), so the file-based searches and the lost-pet photo search only need to search with the tags it returns; `POST /tags` (`edit_tags`) is merged |
 | Chatbot | Leon | §4.3 | Lex bot that understands questions like "show me all fox photos found yesterday" or "find a lost orange cat", calls the query code and returns links to the media |
 | Email notifications | Thanh Tri Le | §4.4 | Users subscribe to species and get an email when a new file with one of them is tagged (SNS). The Notifications tab is done; the subscribe and notify Lambdas are left |
 | Thumbnails | Thanh Tri Le | §4.2 | A Lambda triggered by each image upload: scale it down keeping the aspect ratio, compress it, save it, and store its URL so the library and search results can show it |
@@ -74,6 +74,10 @@ Suggested dates (to be agreed in the group chat):
 | Web | D3 Loading states: spinner, disabled Refresh, "No files yet" | Thanh Tri Le | 2026-10-14 | `dff1cbf` |
 | Web | D11 Notifications tab: species subscribe, `POST /subscriptions` | Thanh Tri Le | 2026-10-14 | `77fb330` |
 | Web | D15 Mobile layout fixes at 375 px | Thanh Tri Le | 2026-10-15 | `929af34` |
+| Authentication | Cognito user pool with self sign-up (email, first name, last name, password, email verification) and managed login pages; website sign-in, token refresh and sign-out (`web/auth.js`, `apiFetch()`); every API route needs the user's ID token (API Gateway Cognito authorizer), with CORS preflights and CORS headers on API Gateway's own errors; `upload-url` records the uploader as `owner`; Cognito test user for the smoke test | Yijiang Luo | 2026-10-21 – 24 | `212852e` `a4124ea` `f6e5d81` `f8610fa` `b905b8b` `c4a70e9` `284f30c` `3c23d5f` `3127c9c` |
+| AWS → GCP authorisation | The `tagging` Lambda signs in as a Cognito machine client (OAuth client credentials, scope `aussie-ecoguard/infer`) and sends the access token to Cloud Run, which checks its signature against the trusted user pools' public keys (JWKS), its expiry and its scope; architecture diagram and README updated (Secrets Manager replaced) | Yijiang Luo | 2026-10-24 | `282b552` `0d043c7` `691574b` `a1405e1` `4651f03` |
+| Detect (search by file) | Cloud Run `POST /detect`: the website sends an image with the user's ID token and gets its species and colours back, nothing is stored (Spec §4.3); CORS for the browser; `detectFile(file)` in `web/detect.js` for the searches | Yijiang Luo | 2026-10-25 | `45bace0` `ade617e` |
+| Edit tags | `edit_tags` Lambda and `POST /tags` route (Cognito-protected) for adding / removing tags on many files | Leon | 2026-10-25 | `2d90ee7` `3db4906` |
 
 ---
 
@@ -83,6 +87,8 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 
 | Date | Who | Entry |
 |---|---|---|
+| 2026-10-25 | Yijiang Luo | `POST /detect` and `web/detect.js` done: Leon's search by an uploaded file and lost pet by photo call `detectFile(file)`, then search with the returned tags. Leon's `POST /tags` merged and deployed |
+| 2026-10-24 | Yijiang Luo | Authentication done: every API route and Cloud Run now need a Cognito token. **Everyone:** pull, run `terraform -chdir=infra/terraform/aws apply`, and send Yijiang the output of `terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id`, so the shared Cloud Run trusts your deployment (it accepts any pool until everyone has sent theirs). New API calls in `web/` must use `apiFetch()` (README § Website) |
 | 2026-10-17 | Yijiang Luo | Task board replaced by one owner per area (TODO above): Yijiang authentication, Leon query API and chatbot, Thanh Tri Le notifications and thumbnails, report together. Whoever builds a backend feature also builds the web UI it needs |
 | 2026-10-15 | Thanh Tri Le | D1, D3, D11, D15 merged; D2 unblocked. D11 needs F1 (subscribe Lambda) live to work end to end |
 | 2026-10-14 | Yijiang Luo | Terraform split into `infra/terraform/aws/` (everyone deploys their own) and `infra/terraform/gcp/` (one shared inference service hosted by Yijiang), because not everyone has a GCP account. Teammates only need AWS: see README § Deploy |

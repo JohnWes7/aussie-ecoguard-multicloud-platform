@@ -63,6 +63,7 @@ def client(main):
     # The token check is switched off here; the tests under "Cognito token"
     # use auth_client, which keeps it.
     main.app.dependency_overrides[main.require_infer_token] = lambda: None
+    main.app.dependency_overrides[main.require_user_token] = lambda: None
     return TestClient(main.app)
 
 
@@ -532,3 +533,118 @@ def test_with_model_gcs_the_models_are_downloaded_loaded_then_deleted(main, monk
     assert main.load_pipeline() == ("pipeline", str(local))
     assert downloads == [("gs://model-bucket/v2", str(local))]
     assert not local.exists()  # /tmp is memory on Cloud Run, so the copies are removed
+
+
+# ---------- /detect (the website sends the image itself) ----------
+
+def post_image(client, content, content_type="image/png", headers=None):
+    return client.post("/detect", content=content, headers={"Content-Type": content_type, **(headers or {})})
+
+
+def no_downloads(main, monkeypatch):
+    def fail(url, **kwargs):
+        raise AssertionError("/detect must not download anything")
+    monkeypatch.setattr(main.requests, "get", fail)
+
+
+@pytest.mark.parametrize("fmt, content_type", [("PNG", "image/png"), ("JPEG", "image/jpeg")])
+def test_detect_runs_the_models_on_the_posted_image(client, main, monkeypatch, fmt, content_type):
+    no_downloads(main, monkeypatch)
+
+    response = post_image(client, image_bytes(fmt=fmt), content_type)
+
+    assert response.status_code == 200
+    assert response.json() == {"tags": {"fox": 2}, "attributes": [], "model": "fake-model"}
+    assert main.pipeline.images[0].size == (40, 20)
+
+
+@pytest.mark.parametrize("content_type", ["video/mp4", "application/json", ""])
+def test_detect_takes_only_images(client, main, content_type):
+    response = post_image(client, image_bytes(), content_type)
+
+    assert response.status_code == 415
+    assert main.pipeline.images == []
+
+
+def test_detect_refuses_a_large_image(client, main, monkeypatch):
+    monkeypatch.setattr(main, "MAX_IMAGE_BYTES", 1000)
+
+    response = post_image(client, b"x" * 1001)
+
+    assert response.status_code == 413
+    assert main.pipeline.images == []
+
+
+def test_detect_with_bytes_that_are_not_an_image_returns_422(client, main):
+    response = post_image(client, b"not an image")
+
+    assert response.status_code == 422
+    assert response.json() == {"error": "file is not a valid image"}
+
+
+def id_token(keys, **claims):
+    """A signed-in user's ID token, as the website's getIdToken() returns it."""
+    return make_token(keys["pool"], token_use="id", scope=None, aud="web-client",
+                      sub="user-1", email="user@example.com", **claims)
+
+
+def test_detect_accepts_a_users_id_token(auth_client, keys):
+    response = post_image(auth_client, image_bytes(), headers=bearer(id_token(keys)))
+    assert response.status_code == 200
+
+
+def test_detect_refuses_the_machine_token(auth_client, main, keys):
+    response = post_image(auth_client, image_bytes(), headers=bearer(make_token(keys["pool"])))
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "a signed-in user's ID token is required"}
+    assert main.pipeline.images == []
+
+
+def test_detect_without_token_returns_401_before_reading_the_image(auth_client, main):
+    response = post_image(auth_client, image_bytes())
+
+    assert response.status_code == 401
+    assert main.pipeline.images == []
+
+
+def test_detect_refuses_an_id_token_from_an_untrusted_pool(auth_client, keys):
+    token = make_token(keys["attacker"], iss=OTHER_ISSUER, token_use="id", scope=None)
+    assert post_image(auth_client, image_bytes(), headers=bearer(token)).status_code == 401
+
+
+def test_infer_refuses_a_users_id_token(auth_client, keys):
+    assert auth_client.post("/infer", json=INFER, headers=bearer(id_token(keys))).status_code == 403
+
+
+# ---------- CORS (the website calls /detect from another origin) ----------
+
+SITE = "https://aussie-ecoguard-web-357614057244.s3.amazonaws.com"
+
+
+def test_preflight_is_answered_without_a_token(auth_client):
+    response = auth_client.options("/detect", headers={
+        "Origin": SITE,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+    })
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+    assert "authorization" in response.headers["access-control-allow-headers"].lower()
+
+
+def test_detect_answers_carry_the_cors_header_even_when_refused(auth_client, keys):
+    ok = post_image(auth_client, image_bytes(), headers={"Origin": SITE, **bearer(id_token(keys))})
+    refused = post_image(auth_client, image_bytes(), headers={"Origin": SITE})
+
+    # Without the header the browser would hide even the 401 from the page.
+    assert ok.headers["access-control-allow-origin"] == "*"
+    assert refused.status_code == 401
+    assert refused.headers["access-control-allow-origin"] == "*"
+
+
+def test_requests_without_origin_get_no_cors_header(auth_client, keys):
+    # e.g. the tagging Lambda calling /infer: not a browser, so CORS does not apply.
+    response = auth_client.post("/infer", json=INFER, headers=bearer(make_token(keys["pool"])))
+    assert "access-control-allow-origin" not in response.headers

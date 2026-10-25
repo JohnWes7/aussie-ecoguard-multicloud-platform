@@ -44,6 +44,7 @@ resource "aws_s3_object" "web_config" {
     "  apiUrl: \"${aws_api_gateway_stage.api.invoke_url}\",",
     "  cognitoDomain: \"https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com\",",
     "  clientId: \"${aws_cognito_user_pool_client.web.id}\",",
+    "  inferenceUrl: \"${var.inference_url}\",", # Cloud Run, for POST /detect (web/detect.js)
     "};",
     "",
   ])

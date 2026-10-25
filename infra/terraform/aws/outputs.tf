@@ -93,3 +93,12 @@ output "smoke_test_password" {
 output "cognito_login_url" {
   value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com/oauth2/authorize?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=${urlencode(local.auth_redirect_urls[0])}"
 }
+
+# SNS topic that subscribers are added to and the notify Lambda publishes to (notifications.tf).
+output "notifications_topic_arn" {
+  value = aws_sns_topic.notifications.arn
+}
+
+output "subscribe_function_name" {
+  value = aws_lambda_function.subscribe.function_name
+}

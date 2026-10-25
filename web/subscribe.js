@@ -2,7 +2,8 @@
 // subscribes with POST /subscriptions {"tags": ["fox", "cane toad"]}. The
 // subscribe Lambda takes their email from the sign-in token and subscribes it
 // to SNS with a filter on those species. SNS first sends a confirmation email;
-// no notification arrives until the user clicks the link in it.
+// no notification arrives until the user clicks the link in it. Subscribing
+// again replaces the species; once confirmed, that sends no new email.
 // This file adds its own tab and panel, so index.html only has to load it.
 
 // Wrapped in a function: the other scripts share the page's global names
@@ -114,13 +115,23 @@
       if (!response.ok) {
         throw new Error(body.error || body.message || `POST /subscriptions returned ${response.status}`);
       }
-      showResult(
-        "success",
-        `Subscribed to ${tags.join(", ")}.`,
-        `Check ${body.email || "your email"} for a message from AWS Notifications and click ` +
-          `"Confirm subscription". Notifications only start after you confirm.`,
-      );
-      if (window.showToast) showToast("Check your email to confirm the subscription", "success");
+      if (body.pending === false) {
+        // Already confirmed earlier: only the species changed, no new email.
+        showResult(
+          "success",
+          `Now subscribed to ${tags.join(", ")}.`,
+          `Notifications keep going to ${body.email}.`,
+        );
+        if (window.showToast) showToast("Species updated", "success");
+      } else {
+        showResult(
+          "success",
+          `Subscribed to ${tags.join(", ")}.`,
+          `Check ${body.email || "your email"} for a message from Aussie EcoGuard and click ` +
+            `"Confirm subscription". Notifications only start after you confirm.`,
+        );
+        if (window.showToast) showToast("Check your email to confirm the subscription", "success");
+      }
     } catch (err) {
       // fetch() itself throws a TypeError when the server cannot be reached.
       const message = err instanceof TypeError ? "Could not reach the server" : err.message;

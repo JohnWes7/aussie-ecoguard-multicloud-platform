@@ -147,11 +147,26 @@ function renderPreview(file) {
     video.preload = "metadata"; // only the first bytes until play is pressed
     return video;
   }
+  // READY images show the small thumbnail (tens of KB instead of the whole
+  // photo) and open the original in a new tab when clicked. If the thumbnail
+  // is not there (not made yet, or the image could not be read), the card
+  // falls back to the original. Other stages only have the original.
   const img = el("img", "card-img-top preview");
-  img.src = file.preview_url;
   img.alt = file.filename;
   img.loading = "lazy";
-  return img;
+  if (!file.thumb_url) {
+    img.src = file.preview_url;
+    return img;
+  }
+  img.addEventListener("error", () => { img.src = file.preview_url; }, { once: true });
+  img.src = file.thumb_url;
+  const link = el("a", "d-block");
+  link.href = file.preview_url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.title = "Open the original";
+  link.append(img);
+  return link;
 }
 
 function renderStatus(file) {

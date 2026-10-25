@@ -114,6 +114,27 @@ def test_get_ready_file_with_preview_url(app, table):
     assert "X-Amz-Signature" in file["preview_url"]
 
 
+def test_ready_image_has_a_thumbnail_url(app, table):
+    # tagging sets thumb_url on READY images.
+    put_file(table, FOX, thumb_url=f"thumbnails/{FOX}.jpg")
+
+    status, file = get_file(app, FOX)
+
+    assert BUCKET_NAME in file["thumb_url"] and f"thumbnails/{FOX}.jpg" in file["thumb_url"]
+    assert "X-Amz-Signature" in file["thumb_url"]
+    assert f"uploads/{FOX}" in file["preview_url"]  # the original is still there to open
+    assert list_files(app)[0]["thumb_url"] == file["thumb_url"]
+
+
+def test_no_thumbnail_url_without_thumb_url(app, table):
+    # Videos, and images that are not READY yet.
+    put_file(table, FOX, file_type="video")
+    put_file(table, CAT, status="PROCESSING")
+
+    assert "thumb_url" not in get_file(app, FOX)[1]
+    assert "thumb_url" not in get_file(app, CAT)[1]
+
+
 def test_get_pending_file_not_uploaded_yet_has_no_preview(app, table):
     # upload-url has issued the URL but the browser has not PUT the file yet.
     put_file(table, FOX, status="PENDING")

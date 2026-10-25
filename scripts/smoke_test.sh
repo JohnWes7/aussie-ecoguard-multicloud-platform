@@ -2,7 +2,8 @@
 # End-to-end check of the deployed system: tagging queue trigger, sign-in of the
 # Cognito test user (its ID token goes with every API call), CORS preflights,
 # POST /upload-url, PUT to the presigned URL, tagging (EventBridge -> SQS ->
-# Lambda -> Cloud Run -> DynamoDB), duplicate rejection, bad requests and the website.
+# Lambda -> Cloud Run -> DynamoDB), the thumbnail, duplicate rejection, bad requests
+# and the website.
 # Cleans up its test file afterwards.
 # Needs AWS credentials. Usage: ./scripts/smoke_test.sh
 set -uo pipefail
@@ -44,6 +45,7 @@ echo "Test file sha256: $SHA"
 
 cleanup() {
   aws s3 rm "s3://$BUCKET/uploads/$SHA" --region "$REGION" >/dev/null 2>&1
+  aws s3 rm "s3://$BUCKET/thumbnails/$SHA.jpg" --region "$REGION" >/dev/null 2>&1
   # Tagging writes TAG# items next to META, so delete every item of the file.
   # A leftover TAG# item would turn up in tag searches as a file that does not exist.
   aws dynamodb query --table-name "$TABLE" --region "$REGION" \
@@ -177,6 +179,18 @@ TAG_COUNT="$(aws dynamodb query --table-name "$TABLE" --region "$REGION" \
   --expression-attribute-values "{\":id\":{\"S\":\"$SHA\"},\":tag\":{\"S\":\"TAG#\"}}" \
   --select COUNT --query Count --output text)"
 check "TAG# items written" "$([ "${TAG_COUNT:-0}" -ge 1 ] && echo yes || echo no)" "yes"
+check "META thumb_url" "$(meta thumb_url.S)" "thumbnails/$SHA.jpg"
+
+# 5b. Thumbnail: the same S3 event -> EventBridge -> thumbnail Lambda -> thumbnails/.
+#     Usually there before tagging finishes; wait up to 30 s more for a cold start.
+THUMB_TYPE="None"
+for _ in $(seq 1 15); do
+  THUMB_TYPE="$(aws s3api head-object --bucket "$BUCKET" --key "thumbnails/$SHA.jpg" --region "$REGION" \
+    --query ContentType --output text 2>/dev/null)" && break
+  THUMB_TYPE="None"
+  sleep 2
+done
+check "thumbnail saved as JPEG" "$THUMB_TYPE" "image/jpeg"
 
 # 6. The same file again is a duplicate now
 STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' -X POST "$API" -H "Content-Type: application/json" \
@@ -188,6 +202,10 @@ STATUS="$(curl -s "${AUTH[@]}" -o "$WORK/file.json" -w '%{http_code}' "$FILES_AP
 check "GET /files/{sha256}" "$STATUS" "200"
 check "GET /files/{sha256} is READY with tags" \
   "$(python -c "import json,sys; f = json.load(sys.stdin); print(f['status'], bool(f['tags']))" < "$WORK/file.json")" "READY True"
+check "GET /files/{sha256} has a thumb_url" \
+  "$(python -c "import json,sys; print('/thumbnails/$SHA.jpg' in json.load(sys.stdin).get('thumb_url', ''))" < "$WORK/file.json")" "True"
+check "thumbnail downloads from thumb_url" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$(json "['thumb_url']" < "$WORK/file.json")")" "200"
 check "GET /files lists the file" \
   "$(curl -s "${AUTH[@]}" "$FILES_API" | python -c "import json,sys; print(any(f['file_id'] == '$SHA' for f in json.load(sys.stdin)['files']))")" "True"
 STATUS="$(curl -s "${AUTH[@]}" -o /dev/null -w '%{http_code}' "$FILES_API/$(printf '0%.0s' {1..64})")"

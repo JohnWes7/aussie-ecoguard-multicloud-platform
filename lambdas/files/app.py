@@ -10,7 +10,8 @@ A file looks like:
   {"file_id", "filename", "status", "file_type", "created_at",
    "tags": {"fox": 2}, "attributes": ["orange"], "model", "error",
    "uploaded",      PENDING only: true once the file is in S3 (queued for tagging)
-   "preview_url"}   presigned GET URL of the original, absent until it is in S3
+   "preview_url",   presigned GET URL of the original, absent until it is in S3
+   "thumb_url"}     presigned GET URL of the thumbnail, READY images only
 """
 
 import json
@@ -113,6 +114,15 @@ def to_file(items):
         file["preview_url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": BUCKET_NAME, "Key": meta["file_url"]},
+            ExpiresIn=PREVIEW_URL_EXPIRES,
+        )
+    # tagging sets thumb_url (READY images only) without waiting for the
+    # thumbnail Lambda, so the object may not exist yet, or ever if the image
+    # could not be read. The website falls back to preview_url then.
+    if "thumb_url" in meta:
+        file["thumb_url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": BUCKET_NAME, "Key": meta["thumb_url"]},
             ExpiresIn=PREVIEW_URL_EXPIRES,
         )
     return file

@@ -6,7 +6,7 @@ The full design is in [architecture/README.md](architecture/README.md). This REA
 
 ## Current status
 
-The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website and the AWS API require a Cognito sign-in (Cloud Run does not check tokens yet). Thumbnails and the query APIs come next.
+The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website and the AWS API require a Cognito sign-in (Cloud Run does not check tokens yet). The query APIs come next.
 
 | Part | Status |
 |---|---|
@@ -16,6 +16,7 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | Cloud Run inference service: MegaDetector → SpeciesNet → CLIP (see [Model selection](#model-selection)), images only | Deployed, no auth yet |
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
+| Thumbnails: `thumbnail` Lambda (EventBridge rule → Pillow → `thumbnails/<sha256>.jpg`), shown on the library cards | New |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
 | `POST /subscriptions` (subscribe to email notifications per species, SNS) | New, Cognito sign-in required |
 | Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | New |
@@ -49,6 +50,7 @@ infra/
 lambdas/
   upload_url/app.py  POST /upload-url
   tagging/app.py     Runs inference on each new upload and saves the tags
+  thumbnail/app.py   Saves a small JPEG of each new image upload in thumbnails/
   files/app.py       GET /files and GET /files/{sha256}
   subscribe/app.py   POST /subscriptions
   notify/app.py      Emails subscribers about new tags (DynamoDB Stream -> SNS)
@@ -75,7 +77,7 @@ scripts/
 
 - AWS CLI v2
 - Terraform 1.5 or newer
-- Python 3.10 or newer
+- Python 3.10 or newer, with `pip3` on your PATH (`apply` uses it to install Pillow for the `thumbnail` Lambda)
 - A bash shell. On Windows use **Git Bash**, not PowerShell (see [Troubleshooting](#troubleshooting))
 - An AWS Academy Learner Lab
 - Only for the person hosting the inference service: the gcloud CLI and a GCP project with billing enabled
@@ -128,6 +130,7 @@ The infrastructure is in two Terraform directories, each with its own state:
 Run the same `apply` after every change. Terraform shows the plan (what it will create, change or delete) and asks for `yes`. It only changes resources whose definition changed. One `apply` does everything:
 
 - Zips each `lambdas/<name>/` folder (`archive_file`) and updates a function only when its code changed.
+- On the first `apply`, installs Pillow for Lambda's platform (Linux, Python 3.12) with `pip3` into `infra/terraform/aws/build/pillow-layer/` and publishes it as a Lambda layer for `thumbnail`. Later `apply`s reuse it, until `pillow_version` in `thumbnails.tf` changes.
 - Publishes the REST API to the `api` stage whenever `api.tf` or its routes change (`triggers` on `aws_api_gateway_deployment`).
 - Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)): the config says `enabled = true`, so Terraform puts it back.
 - Uploads `web/` to the website bucket with `Cache-Control: no-cache` (a reload always picks up the new version), plus a generated `config.js` with this deployment's API URL. A file deleted from `web/` is deleted from the bucket.
@@ -157,6 +160,7 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
 | `aws/variables.tf` | `inference_url` |
 | `aws/storage.tf` | Media and website buckets, DynamoDB table and its stream |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
+| `aws/thumbnails.tf` | Pillow layer, `thumbnail` Lambda, and its target on the EventBridge rule |
 | `aws/api.tf` | REST API routes and the `upload-url`, `files` and `subscribe` Lambdas |
 | `aws/notifications.tf` | SNS topic for email notifications, the `notify` Lambda and its stream trigger |
 | `aws/cognito.tf` | Cognito user pool, app client, sign-in domain and the smoke test's user |
@@ -182,7 +186,8 @@ Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that T
 | AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email. A second, machine client `aussie-ecoguard-tagging` (client credentials, scope `aussie-ecoguard/infer` from resource server `aussie-ecoguard`) gives the `tagging` Lambda its tokens for Cloud Run; its secret is in the Lambda's environment variables |
 | AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
 | AWS | SNS topic | `aussie-ecoguard-notifications`, display name "Aussie EcoGuard" (the sender name on its emails). One email subscription per user, each with a filter policy on `species` |
-| AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
+| AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue and `thumbnail` Lambda |
+| AWS | Thumbnail Lambda and layer | `aussie-ecoguard-thumbnail` (role: `LabRole`) with the layer `aussie-ecoguard-pillow` (Pillow 11.3.0) |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
 | GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4` (next to AWS `us-east-1`), public |
 | GCP (shared) | Model bucket (private) | `aussie-ecoguard-models-<project-number>`, one folder per model version |
@@ -276,6 +281,24 @@ The queue limits tagging to 2 files at a time, the same as Cloud Run's instance 
 
 Lambda logs: CloudWatch → Log groups → `/aws/lambda/aussie-ecoguard-tagging`. Each file logs one line such as `<sha256>: READY {'fox': 2}`, or the reason it was skipped or failed.
 
+### Thumbnails (after the upload)
+
+Also no API call: the same EventBridge rule invokes the `thumbnail` Lambda directly, next to the tagging queue.
+
+```
+S3 Object Created (uploads/) → EventBridge rule → thumbnail Lambda → S3 thumbnails/<sha256>.jpg
+```
+
+1. `thumbnail` reads the object and checks its `Content-Type` (set by `/upload-url`; keys have no extension). Anything that is not `image/*` is skipped before its body is read, so videos get no thumbnail.
+2. It scales the image down with Pillow so the longest side is 512 px (`THUMB_SIZE`), keeping the aspect ratio. Smaller images are not enlarged. Phone photos are turned upright from their EXIF orientation, and transparent PNGs get a white background.
+3. It saves a JPEG at quality 70 (`THUMB_QUALITY`) to `thumbnails/<sha256>.jpg`, usually 20–60 KB instead of several MB. The rule only matches `uploads/`, so this does not trigger anything again.
+
+The thumbnail's key depends only on the file's SHA-256, so `tagging` stores `thumb_url` in `META` when the image becomes `READY` without waiting for `thumbnail`, and `GET /files` returns it signed. The thumbnail is normally there seconds before tagging finishes. Running the function twice just writes the same object again.
+
+Images that cannot be read (corrupt, or a format Pillow does not know) and images over 50 MB (`MAX_BYTES`) are logged and skipped without an error, because retrying would not help; the library then shows the original. Other errors (e.g. S3 throttling) make Lambda retry twice. `delete-files` already deletes `thumbnails/<sha256>.jpg` with the original.
+
+Lambda logs: `/aws/lambda/aussie-ecoguard-thumbnail`, one line per file such as `saved thumbnails/<sha256>.jpg (31406 bytes)` or the reason it was skipped.
+
 ### `GET /files`
 
 Lists every file with its tags, newest first. The website's library uses it.
@@ -284,12 +307,14 @@ Lists every file with its tags, newest first. The website's library uses it.
 {"files": [
   {"file_id": "<sha256>", "filename": "fox.jpg", "status": "READY", "file_type": "image",
    "created_at": "2026-10-11T08:27:43+00:00", "tags": {"fox": 2, "cat": 1}, "attributes": ["orange"],
-   "model": "md5a+speciesnet-4.0.3a+clip-b32-v2", "preview_url": "<presigned GET URL, valid for 1 hour>"}
+   "model": "md5a+speciesnet-4.0.3a+clip-b32-v2", "preview_url": "<presigned GET URL, valid for 1 hour>",
+   "thumb_url": "<presigned GET URL of the thumbnail, valid for 1 hour>"}
 ]}
 ```
 
 - `PENDING` files are listed only while their upload URL is still valid (15 minutes). After that nobody can upload them, so they are abandoned reservations.
 - `FAILED` files have an `error` field.
+- `READY` images also have `thumb_url`, a presigned GET URL of `thumbnails/<sha256>.jpg` (see [Thumbnails](#thumbnails-after-the-upload)). Videos and unfinished files have none. In rare cases (the image could not be read) the object does not exist, so show `preview_url` if it fails to load.
 - `PENDING` files also have `uploaded`: `false` while the browser's `PUT` has not arrived, `true` once the file is in S3 and only waits in the tagging queue (at most 2 files are tagged at a time, so a burst of uploads waits there). The Lambda checks this with an S3 `HeadObject`, because the table only changes when tagging starts. A `preview_url` is given as soon as the file is in S3.
 - `filename` is the name sent to `/upload-url` (empty for files uploaded before it was stored). It is only for display.
 - The Lambda reads the whole table with a `Scan`, which is fine for a few hundred files. Paging would need a GSI on `created_at`.
@@ -416,7 +441,7 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API and the inference service. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the `thumbnail` Lambda saved `thumbnails/<sha256>.jpg`, that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and a `thumb_url` that downloads, and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API and the inference service. Afterwards it deletes its test object, its thumbnail and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 
@@ -444,7 +469,7 @@ Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s
 - **Notifications tab** (`web/subscribe.js`) only talks to `POST /subscriptions`. The user ticks species and subscribes; the tab then says to confirm the email, or that the species were updated if they had confirmed before.
 - **Library** (`web/library.js`) only talks to the files API. It loads `GET /files` when the page opens, on **Refresh** and on `files-changed`, and shows one card per file: preview (image, or a video player), name, date, and the status or the tags as badges. Cards that are not `READY` or `FAILED` yet are polled with `GET /files/{sha256}` every 3 seconds (up to 15 minutes), so a new upload goes Uploading → Queued for tagging → Detecting species → tags. A card is only redrawn when that stage changes.
 
-Previews use the presigned URL of the original file until thumbnails exist. Each response is signed again, so redrawing a card downloads the image again.
+`READY` images show their thumbnail (`thumb_url`) and open the original in a new tab when clicked. If the thumbnail does not load, the card shows the original instead. Videos and files that are not `READY` yet use the original (`preview_url`). Each response is signed again, so redrawing a card downloads the image again.
 
 Use the HTTPS address. The browser only computes SHA-256 (`crypto.subtle`) on HTTPS pages or `localhost`, so on the HTTP website endpoint the page shows a warning and disables the file picker. Files over 500 MB are refused because the browser reads the whole file into memory to hash it.
 
@@ -574,6 +599,9 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | Uploads become `FAILED` with `inference returned 401: token is not from a trusted user pool` | The shared Cloud Run does not trust your Cognito user pool yet. Send `terraform -chdir=infra/terraform/aws output -raw cognito_user_pool_id` to the person hosting the inference service; they add it to `trusted_user_pools` and `apply` the GCP side. Then upload the file again |
 | API returns 401 `Unauthorized`, or 403 `Access Denied` | The Cognito authorizer refused the token. 401: the `Authorization` header is missing, not a JWT, or expired (ID tokens last 1 hour). 403 `Access Denied` (not `Missing Authentication Token`): a JWT whose signature does not check out, e.g. edited by hand or from another user pool. The website gets a fresh token by itself; reload the page or sign in again. For curl, get a new token as in [Manual test of upload-url](#manual-test-of-upload-url). Your own code that calls the API must use `apiFetch()` (see [Website](#website)) |
 | API returns 403 `Missing Authentication Token` | Not an auth problem: the path or method does not exist, for example a `GET` on `/upload-url`, a typo, or a missing `/api` stage. Right after a deploy that **adds** a route, the new route can answer 403 for about a minute until every API Gateway node has the new deployment; the smoke test can fail in that window, so run it again |
+| `apply` fails at `terraform_data.pillow_layer` with `pip3: not found` (or `'pip3' is not recognized`) | Install Python 3.10+ with pip, make sure `pip3 --version` works in a new terminal, then `apply` again |
+| `plan` or `apply` fails with `could not archive missing directory` for `build/pillow-layer` | The git-ignored `build/` folder was deleted after the layer was built. Run `terraform -chdir=infra/terraform/aws apply -replace=terraform_data.pillow_layer` to install Pillow again |
+| Library cards of new images show the original instead of a thumbnail | Check `/aws/lambda/aussie-ecoguard-thumbnail`: no log line means the EventBridge target or its permission is missing (`apply`); `skipped ... cannot read the image` means Pillow could not open that file |
 | `PUT` returns 403 `SignatureDoesNotMatch` | The URL was not copied completely, or the headers differ from the ones returned |
 | `PUT` returns 400 `BadDigest` | The file content does not match the SHA-256 that was reserved |
 | `PUT` returns 403 `Request has expired` | More than 15 minutes passed, or the lab was restarted. Request a new URL |

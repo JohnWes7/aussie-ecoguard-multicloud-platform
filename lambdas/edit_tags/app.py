@@ -7,7 +7,7 @@ dynamodb = boto3.resource('dynamodb')
 TABLE_NAME = os.environ.get('TABLE_NAME')
 table = dynamodb.Table(TABLE_NAME)
 
-def lambda_handler(event, context):
+def handler(event, context):
     # 1. Parse the API Gateway event body
     try:
         body = json.loads(event.get('body', '{}'))

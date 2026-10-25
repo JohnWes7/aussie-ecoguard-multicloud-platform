@@ -17,7 +17,8 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
-| `POST /subscriptions` (subscribe to email notifications per species, SNS) | New, Cognito sign-in required. The `notify` Lambda that sends the emails is not built yet |
+| `POST /subscriptions` (subscribe to email notifications per species, SNS) | New, Cognito sign-in required |
+| Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | New |
 
 ## Model selection
 
@@ -50,6 +51,8 @@ lambdas/
   tagging/app.py     Runs inference on each new upload and saves the tags
   files/app.py       GET /files and GET /files/{sha256}
   subscribe/app.py   POST /subscriptions
+  notify/app.py      Emails subscribers about new tags (DynamoDB Stream -> SNS)
+  notify/email_text.py  Subject and body of that email
 inference/           Cloud Run service (FastAPI + Dockerfile)
   main.py            Web API: downloads the image, runs the models
   model.py           The model pipeline and its decision rules
@@ -152,10 +155,10 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
 |---|---|
 | `aws/versions.tf` | Terraform and provider versions, AWS region, default tags, `LabRole` |
 | `aws/variables.tf` | `inference_url` |
-| `aws/storage.tf` | Media and website buckets, DynamoDB table |
+| `aws/storage.tf` | Media and website buckets, DynamoDB table and its stream |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
 | `aws/api.tf` | REST API routes and the `upload-url`, `files` and `subscribe` Lambdas |
-| `aws/notifications.tf` | SNS topic for email notifications |
+| `aws/notifications.tf` | SNS topic for email notifications, the `notify` Lambda and its stream trigger |
 | `aws/cognito.tf` | Cognito user pool, app client, sign-in domain and the smoke test's user |
 | `aws/website.tf` | Uploads `web/` and `config.js` |
 | `aws/outputs.tf` | URLs and names printed after `apply`, read by the scripts |
@@ -173,8 +176,8 @@ Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that T
 |---|---|---|
 | AWS | Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
 | AWS | Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `website_https_url` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
-| AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
-| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe` (role: `LabRole`) |
+| AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index`, TTL on `expires_at` and a stream (`NEW_IMAGE`) read by `notify` |
+| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe`, `aussie-ecoguard-notify` (role: `LabRole`) |
 | AWS | REST API | `aussie-ecoguard-api`, stage `api` |
 | AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email. A second, machine client `aussie-ecoguard-tagging` (client credentials, scope `aussie-ecoguard/infer` from resource server `aussie-ecoguard`) gives the `tagging` Lambda its tokens for Cloud Run; its secret is in the Lambda's environment variables |
 | AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
@@ -313,7 +316,7 @@ Subscribes the signed-in user to email notifications for the species they choose
 {"tags": ["fox", "cane toad"]}
 ```
 
-The email address comes from the Cognito ID token, never from the body, so a user can only subscribe their own address. The `subscribe` Lambda calls SNS `Subscribe` on the `aussie-ecoguard-notifications` topic with that email and the filter policy `{"species": ["cane toad", "fox"]}`; the `notify` Lambda will publish each file's new tags in a `species` message attribute, so SNS only emails users who chose at least one of them. `tags` must be species from `infra/model/config.json` (`species` plus `other animal`); case and duplicates do not matter.
+The email address comes from the Cognito ID token, never from the body, so a user can only subscribe their own address. The `subscribe` Lambda calls SNS `Subscribe` on the `aussie-ecoguard-notifications` topic with that email and the filter policy `{"species": ["cane toad", "fox"]}`; the `notify` Lambda publishes each file's new tags in a `species` message attribute, so SNS only emails users who chose at least one of them. `tags` must be species from `infra/model/config.json` (`species` plus `other animal`); case and duplicates do not matter.
 
 Each user has one subscription. Subscribing again replaces their species.
 
@@ -325,6 +328,14 @@ Each user has one subscription. Subscribing again replaces their species.
 | 409 | Other species than before while the first subscription still waits for confirmation (SNS cannot change a pending subscription). Confirm it first, then subscribe again | `{error, email}` |
 
 Like `/upload-url`, it has an `OPTIONS` method for the CORS preflight. To stop the emails, users click the unsubscribe link at the bottom of any SNS email.
+
+### Notification emails (`notify` Lambda)
+
+Not an API route. Lambda reads the table's DynamoDB Stream and invokes `notify` with up to 100 records at a time. The trigger's filter passes only `INSERT` records whose `sk` begins with `TAG#`, so each record means "this file gained this tag", from the `tagging` Lambda or a manual tag edit. Changes to `META` items and new counts for an existing tag do not send anything.
+
+`notify` groups the records by file and publishes one SNS message per file to `aussie-ecoguard-notifications`, with the message attribute `species` (`String.Array`, e.g. `["cat", "fox"]`). SNS emails every confirmed subscriber whose filter policy shares at least one species with it. The subject and body come from `lambdas/notify/email_text.py`: the new tags with their counts, the file name and upload time from `META`, and a link to `<website_https_url>#/file/<sha256>`.
+
+If a publish fails, `notify` reports that file as the batch's failure, so Lambda retries from it without emailing the files before it again. After 3 retries the records are skipped and the error stays in the function's CloudWatch log.
 
 ### Inference service (Cloud Run)
 
@@ -384,7 +395,7 @@ The website calls it from another origin, so the service answers CORS preflights
 
 ### Unit tests
 
-These need no AWS account: [moto](https://docs.getmoto.org/) fakes DynamoDB, S3 and SNS. Run them after every change under `lambdas/`.
+These need no AWS account: [moto](https://docs.getmoto.org/) fakes DynamoDB (and its stream), S3, SNS and SQS. Run them after every change under `lambdas/`.
 
 ```bash
 python -m venv .venv                  # first time only (.venv is git-ignored)

@@ -124,6 +124,11 @@ resource "aws_dynamodb_table" "media" {
   hash_key     = "file_id"
   range_key    = "sk"
 
+  # Every change goes on a stream; the notify Lambda reads new TAG# items
+  # from it (notifications.tf). NEW_IMAGE: only the item after the change.
+  stream_enabled   = true
+  stream_view_type = "NEW_IMAGE"
+
   attribute {
     name = "file_id" # SHA-256 of the file
     type = "S"

@@ -379,13 +379,30 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API and the inference service. Afterwards it deletes its test object and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 
 Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.amazonaws.com/index.html`). The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. Besides sign-in, it has two independent parts that share no data:
 
 - **Sign-in** (`web/auth.js`) runs before the other scripts and keeps the page hidden until the user is signed in with Cognito. Every API call goes through its `apiFetch(path, options)`, a `fetch()` that adds the ID token in the `Authorization` header; **use it for any new API call**, or the request will be refused once the API requires sign-in. Do not use it for the presigned S3 URLs, which carry their own signature.
+- **Detect** (`web/detect.js`) has no UI of its own. `detectFile(file)` sends an image to Cloud Run `POST /detect` with the user's ID token and returns `{tags, attributes, model}`; the image is never stored. It is for the searches that start from a file (same tags as a file, lost pet by photo):
+
+  ```js
+  try {
+    const { tags, attributes } = await detectFile(file);  // {"cat": 1}, ["orange"]
+    // ...then search with them through the API (apiFetch)
+  } catch (err) {
+    showToast(err.message, "error");                   // e.g. "Choose a JPEG or PNG image"
+  }
+  ```
+
+  JPEG or PNG only, at most 30 MB (checked before sending). The first call after a quiet period can take about a minute while Cloud Run starts, so show that it is working. To try it, run this in the browser console on the website and pick an image:
+
+  ```js
+  const i = document.createElement("input"); i.type = "file";
+  i.onchange = async () => console.log(await detectFile(i.files[0])); i.click();
+  ```
 - **Upload panel** (`web/upload.js`) only talks to `POST /upload-url` and S3. For each chosen file it computes the SHA-256, reserves it, and PUTs it to S3 with a progress bar, then shows "Uploaded", "Already uploaded" (409) or the error. After an upload it fires a `files-changed` browser event that carries no data.
 - **Library** (`web/library.js`) only talks to the files API. It loads `GET /files` when the page opens, on **Refresh** and on `files-changed`, and shows one card per file: preview (image, or a video player), name, date, and the status or the tags as badges. Cards that are not `READY` or `FAILED` yet are polled with `GET /files/{sha256}` every 3 seconds (up to 15 minutes), so a new upload goes Uploading → Queued for tagging → Detecting species → tags. A card is only redrawn when that stage changes.
 
@@ -406,6 +423,7 @@ window.CONFIG = {
   apiUrl: "<api_url>",
   cognitoDomain: "<cognito_domain_url>",
   clientId: "<cognito_client_id>",
+  inferenceUrl: "<inference_url>",
 };
 ```
 

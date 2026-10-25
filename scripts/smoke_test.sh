@@ -209,6 +209,8 @@ STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$SITE")"
 check "website index.html" "$STATUS" "200"
 check "website config.js has this deployment's api_url" \
   "$(curl -s "${SITE%index.html}config.js" | grep -c "\"$(output api_url)\"")" "1"
+check "website config.js has the inference_url" \
+  "$(curl -s "${SITE%index.html}config.js" | grep -c "\"$(output inference_url)\"")" "1"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "All smoke tests passed"; else echo "$FAILURES smoke test(s) failed"; fi

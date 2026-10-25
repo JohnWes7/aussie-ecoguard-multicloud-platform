@@ -54,6 +54,31 @@ resource "aws_lambda_function" "files" {
   }
 }
 
+data "archive_file" "subscribe" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../lambdas/subscribe"
+  output_path = "${path.module}/build/subscribe.zip"
+}
+
+# Subscribes the signed-in user's email to the notifications topic with a
+# filter policy on the species they chose (lambdas/subscribe).
+resource "aws_lambda_function" "subscribe" {
+  function_name    = "aussie-ecoguard-subscribe"
+  runtime          = "python3.12"
+  handler          = "app.handler"
+  filename         = data.archive_file.subscribe.output_path
+  source_code_hash = data.archive_file.subscribe.output_base64sha256
+  role             = local.lab_role
+  memory_size      = 128
+  timeout          = 10
+
+  environment {
+    variables = {
+      TOPIC_ARN = aws_sns_topic.notifications.arn
+    }
+  }
+}
+
 # ---------- REST API ----------
 
 resource "aws_api_gateway_rest_api" "api" {
@@ -300,6 +325,81 @@ resource "aws_lambda_permission" "files" {
   action        = "lambda:InvokeFunction"
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/GET/files*"
+}
+
+# ---------- POST /subscriptions -> subscribe function ----------
+
+resource "aws_api_gateway_resource" "subscriptions" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "subscriptions"
+}
+
+resource "aws_api_gateway_method" "subscriptions_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.subscriptions.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "subscriptions_post" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.subscriptions.id
+  http_method             = aws_api_gateway_method.subscriptions_post.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = aws_lambda_function.subscribe.invoke_arn
+}
+
+# CORS preflight, the same as for /upload-url.
+resource "aws_api_gateway_method" "subscriptions_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.subscriptions.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "subscriptions_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.subscriptions.id
+  http_method = aws_api_gateway_method.subscriptions_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "subscriptions_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.subscriptions.id
+  http_method = aws_api_gateway_method.subscriptions_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "subscriptions_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.subscriptions.id
+  http_method = aws_api_gateway_method.subscriptions_options.http_method
+  status_code = aws_api_gateway_method_response.subscriptions_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+  }
+  depends_on = [aws_api_gateway_integration.subscriptions_options]
+}
+
+resource "aws_lambda_permission" "subscribe" {
+  function_name = aws_lambda_function.subscribe.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/POST/subscriptions"
 }
 
 # ---------- CORS headers on API Gateway's own errors ----------
@@ -569,6 +669,13 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.file_options.id,
       aws_api_gateway_method_response.file_options.id,
       aws_api_gateway_integration_response.file_options.id,
+      aws_api_gateway_resource.subscriptions.id,
+      aws_api_gateway_method.subscriptions_post.id,
+      aws_api_gateway_integration.subscriptions_post.id,
+      aws_api_gateway_method.subscriptions_options.id,
+      aws_api_gateway_integration.subscriptions_options.id,
+      aws_api_gateway_method_response.subscriptions_options.id,
+      aws_api_gateway_integration_response.subscriptions_options.id,
       aws_api_gateway_gateway_response.default_4xx.id,
       aws_api_gateway_gateway_response.default_5xx.id,
       aws_api_gateway_resource.tags.id,

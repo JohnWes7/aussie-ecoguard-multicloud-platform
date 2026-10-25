@@ -17,6 +17,7 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
+| `POST /subscriptions` (subscribe to email notifications per species, SNS) | New, Cognito sign-in required. The `notify` Lambda that sends the emails is not built yet |
 
 ## Model selection
 
@@ -48,12 +49,14 @@ lambdas/
   upload_url/app.py  POST /upload-url
   tagging/app.py     Runs inference on each new upload and saves the tags
   files/app.py       GET /files and GET /files/{sha256}
+  subscribe/app.py   POST /subscriptions
 inference/           Cloud Run service (FastAPI + Dockerfile)
   main.py            Web API: downloads the image, runs the models
   model.py           The model pipeline and its decision rules
 web/                 Static website (HTML + JS + Bootstrap from a CDN, no build step)
   upload.js          Upload panel: SHA-256, POST /upload-url, PUT to S3
   library.js         Library: GET /files, polls unfinished files
+  subscribe.js       Notifications tab: POST /subscriptions
   config.js          Written by Terraform into the website bucket; a local copy is git-ignored
 tests/               Unit tests (pytest + moto, no AWS account needed)
   fixtures/          Test image used by the smoke test
@@ -151,7 +154,8 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
 | `aws/variables.tf` | `inference_url` |
 | `aws/storage.tf` | Media and website buckets, DynamoDB table |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
-| `aws/api.tf` | REST API routes and the `upload-url` and `files` Lambdas |
+| `aws/api.tf` | REST API routes and the `upload-url`, `files` and `subscribe` Lambdas |
+| `aws/notifications.tf` | SNS topic for email notifications |
 | `aws/cognito.tf` | Cognito user pool, app client, sign-in domain and the smoke test's user |
 | `aws/website.tf` | Uploads `web/` and `config.js` |
 | `aws/outputs.tf` | URLs and names printed after `apply`, read by the scripts |
@@ -170,10 +174,11 @@ Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that T
 | AWS | Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
 | AWS | Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `website_https_url` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
 | AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index` and TTL on `expires_at` |
-| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files` (role: `LabRole`) |
+| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe` (role: `LabRole`) |
 | AWS | REST API | `aussie-ecoguard-api`, stage `api` |
 | AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email. A second, machine client `aussie-ecoguard-tagging` (client credentials, scope `aussie-ecoguard/infer` from resource server `aussie-ecoguard`) gives the `tagging` Lambda its tokens for Cloud Run; its secret is in the Lambda's environment variables |
 | AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
+| AWS | SNS topic | `aussie-ecoguard-notifications`, display name "Aussie EcoGuard" (the sender name on its emails). One email subscription per user, each with a filter policy on `species` |
 | AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
 | GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4` (next to AWS `us-east-1`), public |
@@ -300,6 +305,27 @@ Both routes have an `OPTIONS` method for the CORS preflight, like `/upload-url`.
 
 Errors that API Gateway answers itself, without running a Lambda (for example 403 for a route that does not exist, and later 401 from the Cognito authorizer), also carry `Access-Control-Allow-Origin` (gateway responses `DEFAULT_4XX` / `DEFAULT_5XX`). Without it the browser hides the status from the page and shows only a CORS error.
 
+### `POST /subscriptions`
+
+Subscribes the signed-in user to email notifications for the species they choose (the Notifications tab, `web/subscribe.js`).
+
+```json
+{"tags": ["fox", "cane toad"]}
+```
+
+The email address comes from the Cognito ID token, never from the body, so a user can only subscribe their own address. The `subscribe` Lambda calls SNS `Subscribe` on the `aussie-ecoguard-notifications` topic with that email and the filter policy `{"species": ["cane toad", "fox"]}`; the `notify` Lambda will publish each file's new tags in a `species` message attribute, so SNS only emails users who chose at least one of them. `tags` must be species from `infra/model/config.json` (`species` plus `other animal`); case and duplicates do not matter.
+
+Each user has one subscription. Subscribing again replaces their species.
+
+| Status | Meaning | Body |
+|---|---|---|
+| 200 | New subscription, or the same species again before confirming: SNS sends a confirmation email from "Aussie EcoGuard", and nothing is delivered until the user clicks "Confirm subscription" | `{email, tags, pending: true}` |
+| 200 | Already confirmed: the species are changed in place, no email is sent | `{email, tags, pending: false}` |
+| 400 | Body is not JSON, `tags` missing or empty, or an unknown species | `{error}` |
+| 409 | Other species than before while the first subscription still waits for confirmation (SNS cannot change a pending subscription). Confirm it first, then subscribe again | `{error, email}` |
+
+Like `/upload-url`, it has an `OPTIONS` method for the CORS preflight. To stop the emails, users click the unsubscribe link at the bottom of any SNS email.
+
 ### Inference service (Cloud Run)
 
 Called by the `tagging` Lambda (AWS → GCP only; GCP never holds AWS credentials).
@@ -358,7 +384,7 @@ The website calls it from another origin, so the service answers CORS preflights
 
 ### Unit tests
 
-These need no AWS account: [moto](https://docs.getmoto.org/) fakes DynamoDB and S3. Run them after every change under `lambdas/`.
+These need no AWS account: [moto](https://docs.getmoto.org/) fakes DynamoDB, S3 and SNS. Run them after every change under `lambdas/`.
 
 ```bash
 python -m venv .venv                  # first time only (.venv is git-ignored)
@@ -404,6 +430,7 @@ Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s
   i.onchange = async () => console.log(await detectFile(i.files[0])); i.click();
   ```
 - **Upload panel** (`web/upload.js`) only talks to `POST /upload-url` and S3. For each chosen file it computes the SHA-256, reserves it, and PUTs it to S3 with a progress bar, then shows "Uploaded", "Already uploaded" (409) or the error. After an upload it fires a `files-changed` browser event that carries no data.
+- **Notifications tab** (`web/subscribe.js`) only talks to `POST /subscriptions`. The user ticks species and subscribes; the tab then says to confirm the email, or that the species were updated if they had confirmed before.
 - **Library** (`web/library.js`) only talks to the files API. It loads `GET /files` when the page opens, on **Refresh** and on `files-changed`, and shows one card per file: preview (image, or a video player), name, date, and the status or the tags as badges. Cards that are not `READY` or `FAILED` yet are polled with `GET /files/{sha256}` every 3 seconds (up to 15 minutes), so a new upload goes Uploading → Queued for tagging → Detecting species → tags. A card is only redrawn when that stage changes.
 
 Previews use the presigned URL of the original file until thumbnails exist. Each response is signed again, so redrawing a card downloads the image again.

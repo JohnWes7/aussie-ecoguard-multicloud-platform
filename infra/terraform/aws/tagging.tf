@@ -93,7 +93,7 @@ resource "aws_lambda_function" "tagging" {
       # The machine client the function signs in as to get a token for Cloud Run
       # (cognito.tf). The secret sits in plain text here and in the Lambda
       # console; Secrets Manager would hide it, but was left out to keep it simple.
-      COGNITO_TOKEN_URL     = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com/oauth2/token"
+      COGNITO_TOKEN_URL     = "https://${aws_cognito_user_pool_domain.users.domain}.auth.${local.region}.amazoncognito.com/oauth2/token"
       COGNITO_CLIENT_ID     = aws_cognito_user_pool_client.tagging.id
       COGNITO_CLIENT_SECRET = aws_cognito_user_pool_client.tagging.client_secret
     }
@@ -113,4 +113,7 @@ resource "aws_lambda_event_source_mapping" "tagging" {
   scaling_config {
     maximum_concurrency = 2 # the minimum allowed; matches Cloud Run max-instances
   }
+
+  # Creating the mapping checks that the role can read the queue (iam.tf).
+  depends_on = [aws_iam_role_policy_attachment.lambda]
 }

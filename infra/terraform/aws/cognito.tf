@@ -152,18 +152,15 @@ resource "aws_cognito_user" "smoke_test" {
 }
 
 # Managed login pages need a branding style for the app client. The console
-# adds one automatically, the API does not. aws provider 5.x has no resource
-# for it, so it is created with the aws cli using Cognito's default style.
-# A new client gets a new style; deleting the user pool deletes the style.
-resource "terraform_data" "login_branding" {
-  triggers_replace = aws_cognito_user_pool_client.web.id
-
-  provisioner "local-exec" {
-    command = "aws cognito-idp create-managed-login-branding --user-pool-id ${aws_cognito_user_pool.users.id} --client-id ${aws_cognito_user_pool_client.web.id} --use-cognito-provided-values --region us-east-1"
-  }
+# adds one automatically, the API does not, so it is created here with
+# Cognito's default style.
+resource "aws_cognito_managed_login_branding" "web" {
+  user_pool_id                = aws_cognito_user_pool.users.id
+  client_id                   = aws_cognito_user_pool_client.web.id
+  use_cognito_provided_values = true
 }
 
-# Login page address: https://<domain>.auth.us-east-1.amazoncognito.com
+# Login page address: https://<domain>.auth.<region>.amazoncognito.com
 resource "aws_cognito_user_pool_domain" "users" {
   # Domain prefixes are global, so the account ID keeps this one unique.
   domain       = "aussie-ecoguard-${local.account_id}"
@@ -171,5 +168,5 @@ resource "aws_cognito_user_pool_domain" "users" {
 
   # 2 = managed login (the newer pages), 1 = classic Hosted UI.
   managed_login_version = 2
-  depends_on            = [terraform_data.login_branding]
+  depends_on            = [aws_cognito_managed_login_branding.web]
 }

@@ -4,7 +4,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0" # same as the Week 11 lab
+      version = "~> 6.23" # 6.23+ reads `aws login` credentials
     }
     archive = {
       source  = "hashicorp/archive"
@@ -14,8 +14,7 @@ terraform {
 }
 
 provider "aws" {
-  # Learner Lab region. The bucket commands in storage.tf assume us-east-1.
-  region = "us-east-1"
+  region = local.region
 
   default_tags {
     tags = {
@@ -28,7 +27,11 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 locals {
+  # The personal account's organization only allows Sydney (ap-southeast-2).
+  # Every hard-coded region (cli commands, Cognito URLs) uses this.
+  region     = "ap-southeast-2"
   account_id = data.aws_caller_identity.current.account_id
-  # Learner Lab cannot create IAM roles, so every function uses LabRole.
-  lab_role = "arn:aws:iam::${local.account_id}:role/LabRole"
+  # Every function's execution role (iam.tf). The name is from when this was
+  # Learner Lab's LabRole.
+  lab_role = aws_iam_role.lambda.arn
 }

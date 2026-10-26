@@ -6,8 +6,9 @@
 # Everything else about the buckets (CORS, events, website, policy) uses the
 # normal resources below, which do not need that permission.
 # The commands use no shell operators because local-exec runs cmd.exe on
-# Windows and sh on macOS/Linux. In us-east-1, create-bucket on a bucket you
-# already own succeeds, so re-running it is safe.
+# Windows and sh on macOS/Linux. Outside us-east-1, create-bucket needs a
+# LocationConstraint, and fails with BucketAlreadyOwnedByYou if the bucket
+# already exists; terraform_data only runs it when the bucket is first created.
 
 # Private bucket for user media: originals in uploads/, thumbnails in thumbnails/.
 resource "terraform_data" "media_bucket" {
@@ -15,7 +16,7 @@ resource "terraform_data" "media_bucket" {
   input = "aussie-ecoguard-media-${local.account_id}"
 
   provisioner "local-exec" {
-    command = "aws s3api create-bucket --bucket ${self.input} --region us-east-1"
+    command = "aws s3api create-bucket --bucket ${self.input} --region ${local.region} --create-bucket-configuration LocationConstraint=${local.region}"
   }
 
   # No --force: like CloudFormation, refuse to delete a bucket that still holds
@@ -66,7 +67,7 @@ resource "terraform_data" "website_bucket" {
   input = "aussie-ecoguard-web-${local.account_id}"
 
   provisioner "local-exec" {
-    command = "aws s3api create-bucket --bucket ${self.input} --region us-east-1"
+    command = "aws s3api create-bucket --bucket ${self.input} --region ${local.region} --create-bucket-configuration LocationConstraint=${local.region}"
   }
 
   # --force: the site is generated from web/, so its files can be deleted.
@@ -150,9 +151,16 @@ resource "aws_dynamodb_table" "media" {
   # stay out of it. Answers "tag = fox AND tag_count >= 2".
   global_secondary_index {
     name            = "tag-count-index"
-    hash_key        = "tag"
-    range_key       = "tag_count"
     projection_type = "KEYS_ONLY"
+
+    key_schema {
+      attribute_name = "tag"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "tag_count"
+      key_type       = "RANGE"
+    }
   }
 
   # Abandoned PENDING items (URL issued, never uploaded) carry expires_at

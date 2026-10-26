@@ -55,6 +55,9 @@ resource "aws_lambda_event_source_mapping" "notify" {
   # Like the tagging queue, Learner Lab can disable this; apply turns it back on.
   enabled = true
 
+  # Creating the mapping checks that the role can read the stream (iam.tf).
+  depends_on = [aws_iam_role_policy_attachment.lambda]
+
   filter_criteria {
     filter {
       pattern = jsonencode({

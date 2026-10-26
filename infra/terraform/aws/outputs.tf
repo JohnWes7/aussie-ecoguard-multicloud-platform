@@ -61,7 +61,7 @@ output "cognito_client_id" {
 
 # Base URL of the Hosted UI; the website appends /oauth2/authorize etc. to it.
 output "cognito_domain_url" {
-  value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com"
+  value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.${local.region}.amazoncognito.com"
 }
 
 # The shared Cloud Run inference service this deployment calls (terraform.tfvars).
@@ -91,7 +91,7 @@ output "smoke_test_password" {
 
 # Open in a browser to try sign-up/sign-in before the website handles the code.
 output "cognito_login_url" {
-  value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.us-east-1.amazoncognito.com/oauth2/authorize?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=${urlencode(local.auth_redirect_urls[0])}"
+  value = "https://${aws_cognito_user_pool_domain.users.domain}.auth.${local.region}.amazoncognito.com/oauth2/authorize?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=${urlencode(local.auth_redirect_urls[0])}"
 }
 
 # SNS topic that subscribers are added to and the notify Lambda publishes to (notifications.tf).

@@ -76,13 +76,13 @@ scripts/
 ## Prerequisites
 
 - AWS CLI v2.32 or newer (for `aws login`)
-- Terraform 1.5 or newer
+- Terraform 1.10 or newer (for the S3 state lock)
 - Python 3.10 or newer, with `pip3` on your PATH (`apply` uses it to install Pillow for the `thumbnail` Lambda)
 - A bash shell. On Windows use **Git Bash**, not PowerShell (see [Troubleshooting](#troubleshooting))
 - A personal AWS account: your own, or access to the team's shared one (Yijiang's). AWS Academy Learner Lab does not work, because it blocks Amazon Lex and cannot create IAM roles
 - Only for the person hosting the inference service: the gcloud CLI and a GCP project with billing enabled
 
-Each of us either uses the team's shared deployment or deploys our own copy of the AWS part in our own personal account. Resource names that must be globally unique include the account ID, so the same Terraform code works in every account. Each deployment has its own Terraform state (`infra/terraform/aws/terraform.tfstate`, git-ignored): it records what Terraform created in *that* account, so do not share or commit it.
+The team works on one shared deployment in Yijiang's account; teammates are added under **Team** in AWS Settings, which gives them admin access to it. Its Terraform state (the record of what Terraform created) is stored in an S3 bucket in that account, not on anyone's laptop, so everyone who runs `plan` or `apply` sees the same state. A lock file next to it stops two `apply`s from running at once. Resource names that must be globally unique include the account ID, so the same code also works for your own copy in your own account (see [Your own copy](#your-own-copy)).
 
 Everything on AWS runs in `ap-southeast-2` (Sydney), set once as `local.region` in `infra/terraform/aws/versions.tf`. The shared account's organization blocks every other region.
 
@@ -99,10 +99,10 @@ Terraform (aws provider 6.23 or newer) reads the same login, so no access keys a
 
 The infrastructure is in two Terraform directories, each with its own state:
 
-| Directory | What | Who deploys it |
-|---|---|---|
-| `infra/terraform/aws/` | Everything on AWS (buckets, DynamoDB, Lambdas, API, queue) and the website | Whoever runs a deployment: the shared one, or your own in your personal account |
-| `infra/terraform/gcp/` | The inference service on GCP (Cloud Run, model bucket, image build) | **One person** (Yijiang); the whole team shares it |
+| Directory | What | Who deploys it | State |
+|---|---|---|---|
+| `infra/terraform/aws/` | Everything on AWS (buckets, DynamoDB, Lambdas, API, queue) and the website | Anyone in the team, to the shared deployment | S3 bucket `aussie-ecoguard-tfstate-<account-id>` (`backend "s3"` in `versions.tf`) |
+| `infra/terraform/gcp/` | The inference service on GCP (Cloud Run, model bucket, image build) | **One person** (Yijiang); the whole team shares it | Local file on that person's machine |
 
 **Why two directories:** not everyone in the team has a GCP account (it needs billing enabled), so only one person runs the GCP part and everyone's AWS calls that shared Cloud Run service through its URL (`inference_url`). With one directory, everyone would need GCP credentials just to run `terraform plan`. The service only reads presigned URLs of buckets named `aussie-ecoguard-media-<account-id>`, so it works for every teammate's media bucket. The shared service has at most 2 instances: when several people upload at once, the extra requests are refused and SQS retries them a little later, so files only take longer to become `READY`.
 
@@ -115,16 +115,18 @@ The infrastructure is in two Terraform directories, each with its own state:
    cp infra/terraform/aws/terraform.tfvars.example infra/terraform/aws/terraform.tfvars
    ```
 
-3. Deploy (`init` only the first time):
+3. If you have an old `infra/terraform/aws/terraform.tfstate` or `terraform.tfstate.backup` from before the state moved to S3, delete both. Otherwise `init` offers to copy that old state over the shared one; if asked, answer `no`.
+4. Deploy (`init` only the first time, or after `versions.tf` changes; it connects to the shared state):
 
    ```bash
+   git pull                                  # apply what is on main, not an old copy
    terraform -chdir=infra/terraform/aws init
    terraform -chdir=infra/terraform/aws apply
    ```
 
-4. Run `./scripts/smoke_test.sh` (see [Smoke test](#smoke-test)).
+5. Run `./scripts/smoke_test.sh` (see [Smoke test](#smoke-test)).
 
-Run the same `apply` after every change. Terraform shows the plan (what it will create, change or delete) and asks for `yes`. It only changes resources whose definition changed. One `apply` does everything:
+Run the same `apply` after every change. Terraform shows the plan (what it will create, change or delete) and asks for `yes`. **Read the plan before typing `yes`:** everyone applies to the same deployment, so if it would undo a change you did not make, someone else has applied newer code: `git pull` first. It only changes resources whose definition changed. One `apply` does everything:
 
 - Zips each `lambdas/<name>/` folder (`archive_file`) and updates a function only when its code changed.
 - On the first `apply`, installs Pillow for Lambda's platform (Linux, Python 3.12) with `pip3` into `infra/terraform/aws/build/pillow-layer/` and publishes it as a Lambda layer for `thumbnail`. Later `apply`s reuse it, until `pillow_version` in `thumbnails.tf` changes.
@@ -133,6 +135,19 @@ Run the same `apply` after every change. Terraform shows the plan (what it will 
 - Uploads `web/` to the website bucket with `Cache-Control: no-cache` (a reload always picks up the new version), plus a generated `config.js` with this deployment's API URL. A file deleted from `web/` is deleted from the bucket.
 
 Print the URLs again at any time with `terraform -chdir=infra/terraform/aws output` (e.g. `website_https_url`, `upload_url_endpoint`). Run `terraform -chdir=infra/terraform/aws plan` to see what would change without changing anything; right after an `apply` it should say `No changes`.
+
+#### Your own copy
+
+To deploy a separate copy in your own account, create a state bucket there once (versioning on, so an old state can be restored), then point `init` at it instead of the shared one:
+
+```bash
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+aws s3api create-bucket --bucket aussie-ecoguard-tfstate-$ACCOUNT --region ap-southeast-2 --create-bucket-configuration LocationConstraint=ap-southeast-2
+aws s3api put-bucket-versioning --bucket aussie-ecoguard-tfstate-$ACCOUNT --versioning-configuration Status=Enabled
+terraform -chdir=infra/terraform/aws init -reconfigure -backend-config="bucket=aussie-ecoguard-tfstate-$ACCOUNT"
+```
+
+Switch back to the shared deployment with `terraform -chdir=infra/terraform/aws init -reconfigure`.
 
 ### GCP (only the person hosting the inference service)
 
@@ -588,7 +603,9 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | Uploads become `FAILED` with a connection error or 404 from the inference service | `inference_url` in `infra/terraform/aws/terraform.tfvars` is wrong or the shared service moved. Compare it with `terraform.tfvars.example`, then `apply` |
 | Terraform says `could not find default credentials` for google | Run `gcloud auth application-default login` |
 | `terraform apply` fails with `reading S3 Bucket ... object lock configuration ... explicit deny in a service control policy` | Someone used `aws_s3_bucket` in an account that blocks a permission it needs (Learner Lab does). Create buckets with `terraform_data` as in `storage.tf` |
-| Scripts print `No outputs found`, or `apply` fails because the resources already exist | The Terraform state is on another machine or was deleted. Each person deploys and tests from the machine that holds their `terraform.tfstate` |
+| Scripts print `No outputs found`, or `apply` fails because the resources already exist | Terraform is not reading the shared state: run `terraform -chdir=infra/terraform/aws init` (after `git pull`) and check that `aws sts get-caller-identity` shows the shared account. Never answer `yes` when `init` offers to copy a local state over it |
+| `Error acquiring the state lock` | Someone else is running `plan` or `apply`; wait and retry. If a run crashed and left the lock behind, run `terraform -chdir=infra/terraform/aws force-unlock <lock ID from the error>`, but only after checking that nobody is still applying |
+| Shared state was overwritten or broken | The state bucket keeps old versions: in the S3 console, open `aws/terraform.tfstate` → **Versions** and download the last good one, then upload it as the current version |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | The first upload after a quiet period takes about a minute | Cloud Run scaled to zero, and a new instance downloads and loads the models first (`Downloaded ... in` and `Loaded models in` in its logs). Later uploads are fast. `--min-instances 1` would avoid it but is billed all the time |
 | A new Cloud Run revision does not start; its logs show `no model files under gs://...` or a 403 from Cloud Storage | The version folder does not exist (run `./infra/upload_model.sh <version>`), or the service account lost read access to the model bucket (running `upload_model.sh` again adds it back) |

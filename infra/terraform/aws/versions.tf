@@ -1,5 +1,18 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0" # use_lockfile below needs 1.10+
+
+  # Shared state, so the whole team applies to the same stack. The bucket is
+  # created once with the aws cli (README § Deploy), not by this config, and
+  # has versioning on so an old state can be restored. use_lockfile stops two
+  # applies from running at once. A backend block cannot use variables, so the
+  # name is written out.
+  backend "s3" {
+    bucket       = "aussie-ecoguard-tfstate-908203539695"
+    key          = "aws/terraform.tfstate"
+    region       = "ap-southeast-2"
+    encrypt      = true
+    use_lockfile = true
+  }
 
   required_providers {
     aws = {

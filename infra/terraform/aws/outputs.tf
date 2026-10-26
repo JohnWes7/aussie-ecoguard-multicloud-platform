@@ -14,7 +14,7 @@ output "website_bucket_name" {
 
 # HTTPS: use this one, browser SHA-256 (crypto.subtle) only works over HTTPS.
 output "website_https_url" {
-  value = "https://${terraform_data.website_bucket.output}.s3.amazonaws.com/index.html"
+  value = "https://${terraform_data.website_bucket.output}.s3.${local.region}.amazonaws.com/index.html"
 }
 
 # HTTP-only static website endpoint, as in the Week 9 lab.

@@ -8,7 +8,7 @@ locals {
   # The page Cognito sends the browser back to after sign-in and sign-out.
   # Must match the redirect_uri the website sends exactly.
   auth_redirect_urls = [
-    "https://${terraform_data.website_bucket.output}.s3.amazonaws.com/index.html",
+    "https://${terraform_data.website_bucket.output}.s3.${local.region}.amazonaws.com/index.html",
     "http://localhost:8000/index.html", # local dev server (README), http allowed for localhost only
   ]
 }

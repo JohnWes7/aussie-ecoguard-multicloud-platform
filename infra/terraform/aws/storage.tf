@@ -51,7 +51,7 @@ resource "aws_s3_bucket_cors_configuration" "media" {
     allowed_methods = ["PUT", "GET"]
     # Only pages served from the website bucket (or a local dev server) may call it.
     allowed_origins = [
-      "https://${terraform_data.website_bucket.output}.s3.amazonaws.com",
+      "https://${terraform_data.website_bucket.output}.s3.${local.region}.amazonaws.com",
       "http://${aws_s3_bucket_website_configuration.website.website_endpoint}",
       "http://localhost:8000",
     ]

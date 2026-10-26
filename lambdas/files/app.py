@@ -33,7 +33,9 @@ URL_EXPIRES = int(os.environ.get("URL_EXPIRES", "900"))  # upload-url's PUT URL 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
-s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
+# virtual addressing keeps presigned URLs on the regional endpoint
+# (bucket.s3.<region>.amazonaws.com) instead of the legacy global one.
+s3 = boto3.client("s3", config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
 
 
 def handler(event, context):

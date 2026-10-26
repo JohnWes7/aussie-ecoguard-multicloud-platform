@@ -2,10 +2,12 @@ import json
 import os
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.config import Config
 
 # Initialize clients
 dynamodb = boto3.resource('dynamodb')
-s3_client = boto3.client('s3')
+# Regional endpoint for presigned URLs (bucket.s3.<region>.amazonaws.com).
+s3_client = boto3.client('s3', config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'}))
 
 TABLE_NAME = os.environ.get('TABLE_NAME')
 BUCKET_NAME = os.environ.get('BUCKET_NAME')

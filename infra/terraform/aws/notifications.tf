@@ -33,7 +33,7 @@ resource "aws_lambda_function" "notify" {
       TABLE_NAME = aws_dynamodb_table.media.name
       TOPIC_ARN  = aws_sns_topic.notifications.arn
       # The links in the emails open the file page of the website.
-      SITE_URL = "https://${terraform_data.website_bucket.output}.s3.amazonaws.com/index.html"
+      SITE_URL = "https://${terraform_data.website_bucket.output}.s3.${local.region}.amazonaws.com/index.html"
     }
   }
 }

@@ -18,7 +18,7 @@ output() {
 API="$(output upload_url_endpoint)"
 BUCKET="$(output media_bucket_name)"
 TABLE="$(output media_table_name)"
-ORIGIN="https://$(output website_bucket_name).s3.amazonaws.com"
+ORIGIN="https://$(output website_bucket_name).s3.$REGION.amazonaws.com"
 
 FAILURES=0
 check() { # check <name> <actual> <expected>

@@ -7,7 +7,7 @@ set -euo pipefail
 export AWS_PAGER=""
 
 FILE="${1:?usage: ./scripts/upload.sh <file>}"
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-ap-southeast-2}"
 
 # output <name>: one value from infra/terraform/aws/outputs.tf (read from the local state).
 output() {

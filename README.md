@@ -75,28 +75,25 @@ scripts/
 
 ## Prerequisites
 
-- AWS CLI v2
+- AWS CLI v2.32 or newer (for `aws login`)
 - Terraform 1.5 or newer
 - Python 3.10 or newer, with `pip3` on your PATH (`apply` uses it to install Pillow for the `thumbnail` Lambda)
 - A bash shell. On Windows use **Git Bash**, not PowerShell (see [Troubleshooting](#troubleshooting))
-- An AWS Academy Learner Lab
+- A personal AWS account: your own, or access to the team's shared one (Yijiang's). AWS Academy Learner Lab does not work, because it blocks Amazon Lex and cannot create IAM roles
 - Only for the person hosting the inference service: the gcloud CLI and a GCP project with billing enabled
 
-Each of us deploys our own copy of the AWS part in our own Learner Lab. Resource names that must be globally unique include the account ID, so the same Terraform code works in every account. Each of us also has our own Terraform state (`infra/terraform/aws/terraform.tfstate`, git-ignored): it records what Terraform created in *your* account, so do not share or commit it.
+Each of us either uses the team's shared deployment or deploys our own copy of the AWS part in our own personal account. Resource names that must be globally unique include the account ID, so the same Terraform code works in every account. Each deployment has its own Terraform state (`infra/terraform/aws/terraform.tfstate`, git-ignored): it records what Terraform created in *that* account, so do not share or commit it.
 
-## Learner Lab credentials
+Everything on AWS runs in `ap-southeast-2` (Sydney), set once as `local.region` in `infra/terraform/aws/versions.tf`. The shared account's organization blocks every other region.
 
-Learner Lab credentials expire after a few hours, so redo this every time you start the lab:
+## AWS credentials
 
-1. AWS Academy → Learner Lab → **Start Lab**, and wait until the indicator turns green.
-2. **AWS Details** → **AWS CLI: Show**, then copy the whole `[default]` block.
-3. Paste it into `~/.aws/credentials`, replacing the old content. On Windows that is `C:\Users\<you>\.aws\credentials`. Create the file if it does not exist, with no file extension.
-4. Set the region once: `aws configure set region us-east-1`
-5. Check: `aws sts get-caller-identity` should show `assumed-role/voclabs/...`.
+1. Sign in to the AWS console with your account.
+2. Run `aws login` and confirm in the browser tab it opens. The CLI refreshes the credentials by itself for up to 12 hours; after that, run `aws login` again.
+3. Set the region once: `aws configure set region ap-southeast-2`
+4. Check: `aws sts get-caller-identity` should show your account ID.
 
-Never copy the credentials into this repository or paste them in screenshots.
-
-Stopping the lab does not delete the resources. Only the credentials change. After starting the lab again, run `./scripts/smoke_test.sh`: when a session ends, Lambda may turn off the tagging queue trigger (see [Troubleshooting](#troubleshooting)).
+Terraform (aws provider 6.23 or newer) reads the same login, so no access keys are needed. Never copy credentials into this repository or paste them in screenshots.
 
 ## Deploy
 
@@ -104,14 +101,14 @@ The infrastructure is in two Terraform directories, each with its own state:
 
 | Directory | What | Who deploys it |
 |---|---|---|
-| `infra/terraform/aws/` | Everything on AWS (buckets, DynamoDB, Lambdas, API, queue) and the website | **Everyone**, in their own Learner Lab |
+| `infra/terraform/aws/` | Everything on AWS (buckets, DynamoDB, Lambdas, API, queue) and the website | Whoever runs a deployment: the shared one, or your own in your personal account |
 | `infra/terraform/gcp/` | The inference service on GCP (Cloud Run, model bucket, image build) | **One person** (Yijiang); the whole team shares it |
 
 **Why two directories:** not everyone in the team has a GCP account (it needs billing enabled), so only one person runs the GCP part and everyone's AWS calls that shared Cloud Run service through its URL (`inference_url`). With one directory, everyone would need GCP credentials just to run `terraform plan`. The service only reads presigned URLs of buckets named `aussie-ecoguard-media-<account-id>`, so it works for every teammate's media bucket. The shared service has at most 2 instances: when several people upload at once, the extra requests are refused and SQS retries them a little later, so files only take longer to become `READY`.
 
 ### AWS (everyone)
 
-1. Log in to AWS (see [Learner Lab credentials](#learner-lab-credentials)).
+1. Log in to AWS (see [AWS credentials](#aws-credentials)).
 2. Create your variables file. The example already contains the shared Cloud Run URL:
 
    ```bash
@@ -156,7 +153,8 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
 
 | File | What it defines |
 |---|---|
-| `aws/versions.tf` | Terraform and provider versions, AWS region, default tags, `LabRole` |
+| `aws/versions.tf` | Terraform and provider versions, AWS region (`local.region`), default tags |
+| `aws/iam.tf` | The execution role shared by every Lambda |
 | `aws/variables.tf` | `inference_url` |
 | `aws/storage.tf` | Media and website buckets, DynamoDB table and its stream |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
@@ -172,7 +170,7 @@ Print the URLs again at any time with `terraform -chdir=infra/terraform/aws outp
 | `gcp/outputs.tf` | `inference_url`, model bucket, current image |
 | `*/terraform.tfvars.example` | Templates for your `terraform.tfvars` (git-ignored) |
 
-Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that Terraform's `aws_s3_bucket` needs on every read, so the two S3 buckets are created and deleted with the aws CLI (`terraform_data` in `aws/storage.tf`, the same workaround as the Week 11 lab). Their settings (CORS, events, website, policy) are normal Terraform resources. As a result, Terraform does not notice if a bucket is deleted by hand; `terraform apply -replace=terraform_data.media_bucket` creates it again.
+The two S3 buckets are created and deleted with the aws CLI (`terraform_data` in `aws/storage.tf`), not `aws_s3_bucket`. This started as the Week 11 lab's workaround for Learner Lab, which blocks `s3:GetBucketObjectLockConfiguration`, a permission `aws_s3_bucket` needs on every read, and was kept after the move to personal accounts. Their settings (CORS, events, website, policy) are normal Terraform resources. As a result, Terraform does not notice if a bucket is deleted by hand; `terraform apply -replace=terraform_data.media_bucket` creates it again.
 
 ### What Terraform creates
 
@@ -181,20 +179,18 @@ Learner Lab blocks one permission (`s3:GetBucketObjectLockConfiguration`) that T
 | AWS | Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
 | AWS | Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `website_https_url` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
 | AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index`, TTL on `expires_at` and a stream (`NEW_IMAGE`) read by `notify` |
-| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe`, `aussie-ecoguard-notify` (role: `LabRole`) |
+| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe`, `aussie-ecoguard-notify` (role: `aussie-ecoguard-lambda`) |
+| AWS | IAM role | `aussie-ecoguard-lambda`, the execution role of every Lambda, with the AWS managed policies for CloudWatch Logs, SQS triggers, S3, DynamoDB and SNS |
 | AWS | REST API | `aussie-ecoguard-api`, stage `api` |
 | AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email. A second, machine client `aussie-ecoguard-tagging` (client credentials, scope `aussie-ecoguard/infer` from resource server `aussie-ecoguard`) gives the `tagging` Lambda its tokens for Cloud Run; its secret is in the Lambda's environment variables |
 | AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
 | AWS | SNS topic | `aussie-ecoguard-notifications`, display name "Aussie EcoGuard" (the sender name on its emails). One email subscription per user, each with a filter policy on `species` |
 | AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue and `thumbnail` Lambda |
-| AWS | Thumbnail Lambda and layer | `aussie-ecoguard-thumbnail` (role: `LabRole`) with the layer `aussie-ecoguard-pillow` (Pillow 11.3.0) |
+| AWS | Thumbnail Lambda and layer | `aussie-ecoguard-thumbnail` (role: `aussie-ecoguard-lambda`) with the layer `aussie-ecoguard-pillow` (Pillow 11.3.0) |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
-| GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4` (next to AWS `us-east-1`), public |
+| GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4`, public. It was chosen to sit next to AWS when AWS ran in `us-east-1`; AWS now runs in `ap-southeast-2` |
 | GCP (shared) | Model bucket (private) | `aussie-ecoguard-models-<project-number>`, one folder per model version |
 | GCP (shared) | Image repository | Artifact Registry `aussie-ecoguard`; keeps the 2 newest images (each ~0.7 GB; the free tier is 0.5 GB) |
-
-Your AWS account also contains a CloudFormation stack with a long random name. Learner Lab created it, so leave it alone.
-
 ### Inference service (GCP Cloud Run)
 
 The service has 4 CPUs and 8 GiB, handles one image at a time per instance, scales to zero when idle and is capped at 2 instances. The model files (~1.1 GB) are not in the image: they live in the model bucket, one folder per version, and the service downloads its version (`MODEL_GCS`) at startup.
@@ -445,7 +441,7 @@ It reads the endpoint from the Terraform outputs (so run it on the machine that 
 
 ### Website
 
-Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.amazonaws.com/index.html`). The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. Besides sign-in, it has two independent parts that share no data:
+Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.ap-southeast-2.amazonaws.com/index.html`). Use this regional address: sign-in only returns to it, and the media bucket's CORS only allows it. The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. Besides sign-in, it has two independent parts that share no data:
 
 - **Sign-in** (`web/auth.js`) runs before the other scripts and keeps the page hidden until the user is signed in with Cognito. Every API call goes through its `apiFetch(path, options)`, a `fetch()` that adds the ID token in the `Authorization` header; **use it for any new API call**, or the request will be refused once the API requires sign-in. Do not use it for the presigned S3 URLs, which carry their own signature.
 - **Detect** (`web/detect.js`) has no UI of its own. `detectFile(file)` sends an image to Cloud Run `POST /detect` with the user's ID token and returns `{tags, attributes, model}`; the image is never stored. It is for the searches that start from a file (same tags as a file, lost pet by photo):
@@ -516,7 +512,7 @@ curl -X POST "$SVC/infer" -H "Authorization: Bearer $TOKEN" -H "Content-Type: ap
   -d "{\"url\": \"$URL\", \"file_type\": \"image\"}"
 ```
 
-`aws s3 presign` works offline, so with expired Learner Lab credentials it still prints a URL, but S3 rejects it (`502 ... S3 returned 400`). Refresh the credentials first.
+`aws s3 presign` works offline, so with expired credentials it still prints a URL, but S3 rejects it (`502 ... S3 returned 400`). Refresh the credentials first.
 
 ### Run the inference service locally
 
@@ -539,7 +535,7 @@ Without `MODEL_GCS` the service reads the models straight from `MODEL_DIR`. Afte
 TF="terraform -chdir=infra/terraform/aws output -raw"
 API=$($TF upload_url_endpoint)
 # An ID token for the test user (valid for 1 hour)
-TOKEN=$(aws cognito-idp admin-initiate-auth --region us-east-1   --user-pool-id "$($TF cognito_user_pool_id)" --client-id "$($TF cognito_client_id)"   --auth-flow ADMIN_USER_PASSWORD_AUTH   --auth-parameters "USERNAME=$($TF smoke_test_username),PASSWORD=$($TF smoke_test_password)"   --query AuthenticationResult.IdToken --output text)
+TOKEN=$(aws cognito-idp admin-initiate-auth --region ap-southeast-2   --user-pool-id "$($TF cognito_user_pool_id)" --client-id "$($TF cognito_client_id)"   --auth-flow ADMIN_USER_PASSWORD_AUTH   --auth-parameters "USERNAME=$($TF smoke_test_username),PASSWORD=$($TF smoke_test_password)"   --query AuthenticationResult.IdToken --output text)
 SHA=$(sha256sum fox.jpg | cut -d' ' -f1)
 curl -i -X POST "$API" -H "Authorization: $TOKEN" -H "Content-Type: application/json" \
   -d "{\"sha256\": \"$SHA\", \"filename\": \"fox.jpg\"}"
@@ -581,8 +577,9 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | Symptom | Cause and fix |
 |---|---|
 | Running `./scripts/smoke_test.sh` in PowerShell opens a "choose an app" dialog | PowerShell cannot run `.sh` files. Close the dialog without choosing "Always". Switch the VS Code terminal to **Git Bash**, or run `& "C:\Program Files\Git\bin\bash.exe" ./scripts/smoke_test.sh` |
-| `ExpiredToken` / `InvalidClientTokenId` | Learner Lab credentials expired. Copy fresh ones into `~/.aws/credentials` |
-| Uploads stay `PENDING`; the tagging queue has messages but nothing processes them; smoke test fails `tagging queue trigger enabled` | When a Learner Lab session ends, `LabRole` loses its SQS permissions for a while. Lambda then disables the queue trigger by itself (CloudTrail event `LambdaESMDisabled`; the mapping shows `USER_INITIATED`, which is misleading) and does not turn it back on. Run `terraform -chdir=infra/terraform/aws apply` to enable it. Queued messages are kept for 4 days and are processed once it is enabled |
+| `ExpiredToken` / `InvalidClientTokenId`, or the CLI asks you to log in | The `aws login` session ended (after 12 hours). Run `aws login` again |
+| `AccessDenied` / `UnauthorizedOperation` with `explicit deny in a service control policy` | The command or `apply` ran in a region other than `ap-southeast-2`, which the shared account's organization blocks. Check `aws configure get region`, and use `--region ap-southeast-2` |
+| Uploads stay `PENDING`; the tagging queue has messages but nothing processes them; smoke test fails `tagging queue trigger enabled` | The execution role lost its SQS permissions (on Learner Lab this happened whenever a session ended). Lambda then disables the queue trigger by itself (CloudTrail event `LambdaESMDisabled`; the mapping shows `USER_INITIATED`, which is misleading) and does not turn it back on. Run `terraform -chdir=infra/terraform/aws apply`, which restores the role's policies and enables the trigger. Queued messages are kept for 4 days and are processed once it is enabled |
 | A file is `FAILED` | Its `META` item has an `error` attribute with the reason, also in the `tagging` logs. Fix the cause and upload the file again (`POST /upload-url` allows it) |
 | A file stays `PROCESSING` | The `tagging` Lambda crashed or timed out on every delivery and the message is in the dead-letter queue. Check the logs, fix the cause, then SQS console → `aussie-ecoguard-tagging-dlq` → **Start DLQ redrive** to send it back; tagging continues from `PROCESSING` |
 | Website says "must be opened over HTTPS" or "config.js is missing" | Open the `website_https_url` output, not the `http://...s3-website...` address. For a local copy, create `web/config.js` (see [Website](#website)) |
@@ -590,7 +587,7 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | `terraform apply` asks for `var.inference_url` (or `var.gcp_project_id`) | `terraform.tfvars` is missing in that directory. Copy it from `terraform.tfvars.example` (see [Deploy](#deploy)) |
 | Uploads become `FAILED` with a connection error or 404 from the inference service | `inference_url` in `infra/terraform/aws/terraform.tfvars` is wrong or the shared service moved. Compare it with `terraform.tfvars.example`, then `apply` |
 | Terraform says `could not find default credentials` for google | Run `gcloud auth application-default login` |
-| `terraform apply` fails with `reading S3 Bucket ... object lock configuration ... explicit deny in a service control policy` | Someone used `aws_s3_bucket`. Learner Lab blocks a permission it needs; create buckets with `terraform_data` as in `storage.tf` |
+| `terraform apply` fails with `reading S3 Bucket ... object lock configuration ... explicit deny in a service control policy` | Someone used `aws_s3_bucket` in an account that blocks a permission it needs (Learner Lab does). Create buckets with `terraform_data` as in `storage.tf` |
 | Scripts print `No outputs found`, or `apply` fails because the resources already exist | The Terraform state is on another machine or was deleted. Each person deploys and tests from the machine that holds their `terraform.tfstate` |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | The first upload after a quiet period takes about a minute | Cloud Run scaled to zero, and a new instance downloads and loads the models first (`Downloaded ... in` and `Loaded models in` in its logs). Later uploads are fast. `--min-instances 1` would avoid it but is billed all the time |

@@ -9,7 +9,7 @@
 set -uo pipefail
 export AWS_PAGER=""
 
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-ap-southeast-2}"
 
 # output <name>: one value from infra/terraform/aws/outputs.tf (read from the local state).
 output() {
@@ -61,8 +61,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 0. Tagging queue trigger. Lambda turns it off by itself when LabRole loses its
-#    SQS permissions (e.g. after a Learner Lab session ends); uploads then stay PENDING.
+# 0. Tagging queue trigger. Lambda turns it off by itself when the role loses its
+#    SQS permissions (e.g. its policy was detached); uploads then stay PENDING.
 ESM_STATE="$(aws lambda list-event-source-mappings --function-name "$(output tagging_function_name)" \
   --region "$REGION" --query "EventSourceMappings[0].State" --output text)"
 check "tagging queue trigger enabled" "$ESM_STATE" "Enabled"

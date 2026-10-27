@@ -727,6 +727,104 @@ resource "aws_lambda_permission" "search" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/POST/search"
 }
 
+# ---------- POST /chat -> chat function ----------
+
+data "archive_file" "chat" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../lambdas/chat"
+  output_path = "${path.module}/build/chat.zip"
+}
+
+resource "aws_lambda_function" "chat" {
+  function_name    = "aussie-ecoguard-chat"
+  runtime          = "python3.12"
+  handler          = "app.handler"
+  filename         = data.archive_file.chat.output_path
+  source_code_hash = data.archive_file.chat.output_base64sha256
+  role             = local.lab_role
+  memory_size      = 128
+  timeout          = 10
+
+  environment {
+    variables = {
+      BOT_ID       = "PLACEHOLDER_BOT_ID"     # We will update this when Lex is ready
+      BOT_ALIAS_ID = "PLACEHOLDER_ALIAS_ID"   # We will update this when Lex is ready
+    }
+  }
+}
+
+resource "aws_api_gateway_resource" "chat" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "chat"
+}
+
+resource "aws_api_gateway_method" "chat_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.chat.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "chat_post" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.chat.id
+  http_method             = aws_api_gateway_method.chat_post.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = aws_lambda_function.chat.invoke_arn
+}
+
+resource "aws_api_gateway_method" "chat_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.chat.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.chat.id
+  http_method = aws_api_gateway_method.chat_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.chat.id
+  http_method = aws_api_gateway_method.chat_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.chat.id
+  http_method = aws_api_gateway_method.chat_options.http_method
+  status_code = aws_api_gateway_method_response.chat_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+  }
+  depends_on = [aws_api_gateway_integration.chat_options]
+}
+
+resource "aws_lambda_permission" "chat" {
+  function_name = aws_lambda_function.chat.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/POST/chat"
+}
+
 # ---------- Deployment and stage ----------
 
 # A deployment is a snapshot of the API; the stage "api" serves it at
@@ -797,6 +895,13 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.search_options.id,
       aws_api_gateway_method_response.search_options.id,
       aws_api_gateway_integration_response.search_options.id,
+      aws_api_gateway_resource.chat.id,
+      aws_api_gateway_method.chat_post.id,
+      aws_api_gateway_integration.chat_post.id,
+      aws_api_gateway_method.chat_options.id,
+      aws_api_gateway_integration.chat_options.id,
+      aws_api_gateway_method_response.chat_options.id,
+      aws_api_gateway_integration_response.chat_options.id,
     ]))
   }
 

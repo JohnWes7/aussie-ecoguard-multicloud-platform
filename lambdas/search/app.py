@@ -14,6 +14,11 @@ BUCKET_NAME = os.environ.get('BUCKET_NAME')
 table = dynamodb.Table(TABLE_NAME)
 
 def handler(event, context):
+
+    # Check if Lex is calling this Lambda
+    if 'sessionState' in event:
+        return handle_lex_request(event)
+    
     # 1. Parse the API Gateway event body
     try:
         body = json.loads(event.get('body', '{}'))
@@ -102,4 +107,63 @@ def handler(event, context):
     return {
         'statusCode': 200,
         'body': json.dumps({'results': results})
+    }
+
+def handle_lex_request(event):
+    # 1. Extract the species from Lex's payload
+    slots = event.get('sessionState', {}).get('intent', {}).get('slots', {})
+    species_slot = slots.get('Species')
+    
+    if not species_slot or not species_slot.get('value'):
+        return build_lex_response("I didn't catch which animal you are looking for.")
+        
+    species = species_slot['value']['interpretedValue']
+    
+    # 2. Query your GSI for the species
+    response = table.query(
+        IndexName='tag-count-index',
+        KeyConditionExpression=Key('tag').eq(species) & Key('tag_count').gte(1)
+    )
+    
+    items = response.get('Items', [])
+    
+    if not items:
+        return build_lex_response(f"I didn't find any photos of {species}.")
+        
+    # 3. Generate a Presigned URL for the first match
+    file_id = items[0]['file_id']
+    meta_res = table.get_item(Key={'file_id': file_id, 'sk': 'META'})
+    meta = meta_res.get('Item', {})
+    
+    url = "No URL available"
+    if 'file_url' in meta:
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': BUCKET_NAME, 'Key': meta['file_url']},
+            ExpiresIn=3600
+        )
+
+    # 4. Return the response
+    msg = f"I found {len(items)} photos of {species}. Here is the link to the first one: {url}"
+    return build_lex_response(msg)
+
+
+def build_lex_response(message_text):
+    # This is the exact format Lex expects to close the conversation
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "Close"
+            },
+            "intent": {
+                "name": "FindSightings",
+                "state": "Fulfilled"
+            }
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": message_text
+            }
+        ]
     }

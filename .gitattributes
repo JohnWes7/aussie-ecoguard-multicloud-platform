@@ -1,3 +1,10 @@
-# Shell scripts must keep LF line endings, even on Windows with core.autocrlf=true:
-# bash fails on CRLF ("$'\r': command not found").
-*.sh text eol=lf
+# Every text file is checked out with LF, even on Windows with core.autocrlf=true:
+# - bash fails on CRLF ("$'\r': command not found")
+# - Terraform hashes the Lambda zips and web files, so CRLF on one machine and
+#   LF on another makes each apply re-upload code that has not changed
+* text=auto eol=lf
+
+# Binary files: never convert
+*.png binary
+*.jpg binary
+*.jpeg binary

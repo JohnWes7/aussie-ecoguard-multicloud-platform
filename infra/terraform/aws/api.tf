@@ -747,8 +747,8 @@ resource "aws_lambda_function" "chat" {
 
   environment {
     variables = {
-      BOT_ID       = "PLACEHOLDER_BOT_ID"     # We will update this when Lex is ready
-      BOT_ALIAS_ID = "PLACEHOLDER_ALIAS_ID"   # We will update this when Lex is ready
+      BOT_ID       = "2VC6CJK2LJ"     # We will update this when Lex is ready
+      BOT_ALIAS_ID = "TSTALIASID"   # We will update this when Lex is ready
     }
   }
 }

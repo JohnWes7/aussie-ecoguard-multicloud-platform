@@ -62,6 +62,7 @@ def handler(event, context):
     if not matching_file_ids:
         return {
             'statusCode': 200,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'results': []})
         }
 
@@ -106,6 +107,7 @@ def handler(event, context):
     # Return the final list of results
     return {
         'statusCode': 200,
+        'headers': {'Access-Control-Allow-Origin': '*'},
         'body': json.dumps({'results': results})
     }
 
@@ -130,21 +132,27 @@ def handle_lex_request(event):
     if not items:
         return build_lex_response(f"I didn't find any photos of {species}.")
         
-    # 3. Generate a Presigned URL for the first match
-    file_id = items[0]['file_id']
-    meta_res = table.get_item(Key={'file_id': file_id, 'sk': 'META'})
-    meta = meta_res.get('Item', {})
-    
-    url = "No URL available"
-    if 'file_url' in meta:
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': BUCKET_NAME, 'Key': meta['file_url']},
-            ExpiresIn=3600
-        )
+    # 3. Generate Presigned URLs for up to 3 matches
+    urls = []
+    for item in items[:3]: # Lex has a text limit, so we only show the first 3
+        file_id = item['file_id']
+        meta_res = table.get_item(Key={'file_id': file_id, 'sk': 'META'})
+        meta = meta_res.get('Item', {})
+        
+        if 'file_url' in meta:
+            url = s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': BUCKET_NAME, 'Key': meta['file_url']},
+                ExpiresIn=3600
+            )
+            urls.append(url)
 
-    # 4. Return the response
-    msg = f"I found {len(items)} photos of {species}. Here is the link to the first one: {url}"
+    if not urls:
+        return build_lex_response(f"I found {len(items)} photos of {species}, but could not generate URLs for them.")
+
+    # 4. Return the response with all links
+    links_text = "\n".join(urls)
+    msg = f"I found {len(items)} photos of {species}. Here are the links:\n{links_text}"
     return build_lex_response(msg)
 
 

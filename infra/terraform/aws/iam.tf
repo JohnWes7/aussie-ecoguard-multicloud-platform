@@ -25,6 +25,7 @@ resource "aws_iam_role_policy_attachment" "lambda" {
     "arn:aws:iam::aws:policy/AmazonS3FullAccess",
     "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess", # includes stream reads
     "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+    "arn:aws:iam::aws:policy/AmazonLexFullAccess",
   ])
 
   role       = aws_iam_role.lambda.name

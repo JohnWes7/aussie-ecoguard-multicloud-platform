@@ -19,6 +19,60 @@ refreshButton.addEventListener("click", loadFiles);
 document.addEventListener("files-changed", loadFiles);
 if (window.CONFIG) loadFiles();
 
+// Create and inject the search bar UI
+const searchContainer = el("div", "d-flex gap-2 mb-3");
+searchContainer.innerHTML = `
+  <input type="text" id="search-input" class="form-control" placeholder="Enter a tag (e.g., fox, feral pig)">
+  <button id="search-btn" class="btn btn-primary">Search</button>
+  <button id="clear-search-btn" class="btn btn-outline-secondary" hidden>Clear</button>
+`;
+grid.parentNode.insertBefore(searchContainer, grid);
+
+document.getElementById("search-btn").addEventListener("click", handleSearch);
+document.getElementById("clear-search-btn").addEventListener("click", () => {
+  document.getElementById("search-input").value = "";
+  document.getElementById("clear-search-btn").hidden = true;
+  loadFiles(); // Reload the normal library
+});
+
+// Create and inject the Chat Widget UI
+const chatContainer = el("div", "position-fixed bottom-0 end-0 m-3 shadow-lg");
+chatContainer.style.zIndex = "1050";
+chatContainer.innerHTML = `
+  <div class="card" style="width: 350px; height: 450px; display: flex; flex-direction: column;">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+      <span>Aussie EcoGuard AI</span>
+      <button class="btn-close btn-close-white" id="chat-close-btn"></button>
+    </div>
+    <div class="card-body overflow-auto flex-grow-1" id="chat-messages" style="background-color: #f8f9fa;">
+      <div class="text-muted small text-center mb-2">Ask me to find an animal!</div>
+    </div>
+    <div class="card-footer p-2">
+      <div class="input-group">
+        <input type="text" id="chat-input" class="form-control" placeholder="Find me a fox...">
+        <button class="btn btn-primary" id="chat-send-btn">Send</button>
+      </div>
+    </div>
+  </div>
+`;
+document.body.append(chatContainer);
+
+// Add a button to reopen the chat if closed
+const chatToggleBtn = el("button", "btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-3 shadow");
+chatToggleBtn.innerHTML = "Chat";
+chatToggleBtn.style.display = "none";
+chatToggleBtn.style.zIndex = "1050";
+document.body.append(chatToggleBtn);
+
+document.getElementById("chat-close-btn").addEventListener("click", () => {
+  chatContainer.style.display = "none";
+  chatToggleBtn.style.display = "block";
+});
+chatToggleBtn.addEventListener("click", () => {
+  chatContainer.style.display = "block";
+  chatToggleBtn.style.display = "none";
+});
+
 async function loadFiles() {
   if (loading) { // one request at a time; an upload that finished meanwhile still shows up
     reloadWanted = true;
@@ -126,6 +180,18 @@ function renderCard(file) {
   const when = new Date(file.created_at).toLocaleString();
   body.append(title, el("p", "card-text small text-body-secondary mb-2", `${file.file_type} · ${when}`));
   body.append(renderStatus(file));
+  
+  // Add action buttons (Delete)
+  const actions = el("div", "mt-2 d-flex gap-2");
+  const deleteBtn = el("button", "btn btn-sm btn-outline-danger", "Delete");
+  deleteBtn.addEventListener("click", () => handleDelete(file.file_id));
+  actions.append(deleteBtn);
+  body.append(actions);
+
+  const editTagBtn = el("button", "btn btn-sm btn-outline-primary", "Edit Tags");
+  editTagBtn.addEventListener("click", () => handleEditTags(file.file_id));
+  actions.append(editTagBtn);
+
   return col;
 }
 
@@ -198,3 +264,161 @@ function el(tag, className = "", text = "") {
   node.textContent = text;
   return node;
 }
+
+async function handleDelete(fileId) {
+  if (!confirm("Are you sure you want to delete this file?")) return;
+
+  try {
+    const response = await apiFetch("/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls: [fileId] }) // We just send the file_id
+    });
+
+    if (!response.ok) throw new Error("Failed to delete file");
+
+    // Remove the card from the DOM instantly without reloading the page
+    const card = document.querySelector(`[data-file-id="${fileId}"]`);
+    if (card) card.remove();
+    
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function handleEditTags(fileId) {
+  const tag = prompt("Enter the tag name (e.g., fox, cat, cane toad):");
+  if (!tag) return; // User cancelled
+
+  const opString = prompt("Type 1 to ADD the tag, or 0 to REMOVE the tag:");
+  if (opString !== "0" && opString !== "1") {
+    alert("Invalid operation. Must be 0 or 1.");
+    return;
+  }
+  
+  const operation = parseInt(opString);
+  
+  // The backend expects a dictionary of tags, e.g., {"fox": 1}
+  const tagsDict = {};
+  tagsDict[tag.toLowerCase()] = 1; 
+
+  try {
+    const response = await apiFetch("/tags", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        urls: [fileId],
+        operation: operation,
+        tags: tagsDict
+      })
+    });
+
+    if (!response.ok) throw new Error("Failed to edit tags");
+
+    alert("Tags updated successfully!");
+    
+    // Reload the page data to reflect the new tags
+    loadFiles(); 
+    
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function handleSearch() {
+  const input = document.getElementById("search-input");
+  const tag = input.value.trim().toLowerCase();
+  if (!tag) return;
+
+  try {
+    // Send {"tags": {"fox": 1}} to your search Lambda
+    const response = await apiFetch("/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: { [tag]: 1 } })
+    });
+
+    if (!response.ok) throw new Error("Search failed");
+    
+    const data = await response.json();
+    const results = data.results || [];
+
+    // Clear the current grid
+    grid.replaceChildren();
+    document.getElementById("clear-search-btn").hidden = false;
+
+    if (results.length === 0) {
+      grid.append(el("div", "text-center py-5 text-body-secondary", "No files found for this tag."));
+      return;
+    }
+
+    // Render the results
+    for (const item of results) {
+      const col = el("div", "col");
+      const card = el("div", "card h-100 shadow-sm");
+      
+      // Create the preview using the presigned URL from the search Lambda
+      const img = el("img", "card-img-top preview");
+      img.src = item.thumbnail_url || item.file_url;
+      img.style.objectFit = "cover";
+      img.style.height = "200px";
+      
+      const body = el("div", "card-body");
+      const title = el("h3", "card-title h6 text-truncate", item.file_id.slice(0, 12));
+      
+      card.append(img, body);
+      body.append(title);
+      col.append(card);
+      grid.append(col);
+    }
+    
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+// Generate a unique session ID for this browser session
+const CHAT_SESSION_ID = Math.random().toString(36).substring(2, 15);
+
+async function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const messagesDiv = document.getElementById("chat-messages");
+  const text = input.value.trim();
+  if (!text) return;
+
+  // 1. Append the user's message to the chat window
+  const userMsg = el("div", "mb-2 text-end");
+  userMsg.innerHTML = `<span class="badge bg-primary text-wrap text-start" style="max-width: 80%;">${text}</span>`;
+  messagesDiv.append(userMsg);
+  input.value = ""; // Clear input
+  messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
+
+  // 2. Call the /chat Lambda
+  try {
+    const response = await apiFetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text, sessionId: CHAT_SESSION_ID })
+    });
+
+    if (!response.ok) throw new Error("Failed to reach chat API");
+    const data = await response.json();
+
+    // 3. Append Lex's reply to the chat window
+    const botMsg = el("div", "mb-2 text-start");
+    botMsg.innerHTML = `<span class="badge bg-secondary text-wrap text-start" style="max-width: 80%;">${data.message}</span>`;
+    messagesDiv.append(botMsg);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
+
+  } catch (err) {
+    const errorMsg = el("div", "mb-2 text-start");
+    errorMsg.innerHTML = `<span class="badge bg-danger text-wrap text-start">Error: ${err.message}</span>`;
+    messagesDiv.append(errorMsg);
+  }
+}
+
+// Add event listeners for clicking "Send" and pressing "Enter"
+document.getElementById("chat-send-btn").addEventListener("click", sendChatMessage);
+document.getElementById("chat-input").addEventListener("keypress", (e) => {
+  if (e.key === "Enter") sendChatMessage();
+});

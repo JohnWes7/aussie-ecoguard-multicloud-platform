@@ -46,6 +46,7 @@ def handler(event, context):
             
         return {
             'statusCode': 200,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({
                 'message': reply_text,
                 'intent': response.get('sessionState', {}).get('intent', {}).get('name')
@@ -55,5 +56,6 @@ def handler(event, context):
     except Exception as e:
         return {
             'statusCode': 500,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Failed to communicate with Lex', 'details': str(e)})
         }

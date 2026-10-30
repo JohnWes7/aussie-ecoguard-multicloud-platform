@@ -6,14 +6,14 @@ The full design is in [architecture/README.md](architecture/README.md). This REA
 
 ## Current status
 
-The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website and the AWS API require a Cognito sign-in (Cloud Run does not check tokens yet). The query APIs come next.
+The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website, the AWS API and the inference service require a Cognito sign-in (the `tagging` Lambda signs in to Cloud Run as a machine client). The query APIs come next.
 
 | Part | Status |
 |---|---|
 | Media bucket, `Media` DynamoDB table, website bucket | Deployed |
 | `POST /upload-url` (Lambda + API Gateway, deduplication by SHA-256) | Deployed, Cognito sign-in required |
 | `tagging` (EventBridge rule → SQS queue → Lambda → Cloud Run → DynamoDB) | Deployed |
-| Cloud Run inference service: MegaDetector → SpeciesNet → CLIP (see [Model selection](#model-selection)), images only | Deployed, no auth yet |
+| Cloud Run inference service: MegaDetector → SpeciesNet → CLIP (see [Model selection](#model-selection)); `POST /detect` for searches that start from a photo | Deployed, Cognito token required (see [Inference service](#inference-service-cloud-run)) |
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
 | Thumbnails: `thumbnail` Lambda (EventBridge rule → Pillow → `thumbnails/<sha256>.jpg`), shown on the library cards | Deployed |
@@ -420,6 +420,11 @@ Content-Type: image/jpeg            (or image/png)
 | 413 | Larger than 30 MB | `{"error": "file is larger than 30 MB"}` |
 | 415 | `Content-Type` is not `image/jpeg` or `image/png` (e.g. a video) | `{"error": "send a JPEG or PNG image, not video/mp4"}` |
 | 422 | The bytes are not a valid image | `{"error": "file is not a valid image"}` |
+| 429 | Both Cloud Run instances are busy (at most 2, one request each, shared with the `tagging` Lambda while uploads are being tagged). Try again a few seconds later | Cloud Run's own answer, not JSON and without a CORS header, so in the browser `detectFile` throws `TypeError: Failed to fetch` instead |
+
+**No animal found:** the answer is still 200, with `{"tags": {}, "attributes": [], "model": "..."}`. Tell the user and do not search: the search API refuses empty tags with 400.
+
+**Searching with the result:** use every species in `tags` with a minimum count of **1**. The count is how many animals are in the query photo, not a minimum for the other files (a photo of one cat should find photos with three cats). `attributes` holds the colours of the cats and dogs in the photo, e.g. to narrow a lost-pet search; it is often empty, and the colours can be wrong, so do not rely on them alone.
 
 The website calls it from another origin, so the service answers CORS preflights (FastAPI's `CORSMiddleware`, any origin, `POST` with `Authorization` and `Content-Type`) and adds `Access-Control-Allow-Origin` to every answer to the website, including 401s. Requests without an `Origin` header, such as the `tagging` Lambda's, are not affected.
 
@@ -464,7 +469,11 @@ Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s
   ```js
   try {
     const { tags, attributes } = await detectFile(file);  // {"cat": 1}, ["orange"]
-    // ...then search with them through the API (apiFetch)
+    if (Object.keys(tags).length === 0) {
+      showToast("No animal found in this photo", "info");
+      return;
+    }
+    // ...then search with every species at a minimum count of 1, through the API (apiFetch)
   } catch (err) {
     showToast(err.message, "error");                   // e.g. "Choose a JPEG or PNG image"
   }

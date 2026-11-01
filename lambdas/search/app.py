@@ -12,6 +12,16 @@ s3_client = boto3.client('s3', config=Config(signature_version='s3v4', s3={'addr
 TABLE_NAME = os.environ.get('TABLE_NAME')
 BUCKET_NAME = os.environ.get('BUCKET_NAME')
 table = dynamodb.Table(TABLE_NAME)
+# Global plural mapping for both Lex and Browser searches
+PLURAL_MAP = {
+    "foxes": "fox",
+    "dogs": "dog",
+    "cats": "cat",
+    "feral pigs": "feral pig",
+    "cane toads": "cane toad",
+    "rabbits": "rabbit",
+    "kangaroos": "kangaroo"
+}
 
 def handler(event, context):
 
@@ -29,7 +39,13 @@ def handler(event, context):
         }
 
     # The frontend will send a dictionary of tags and counts, e.g., {"fox": 2}
-    search_tags = body.get('tags', {})
+    raw_tags = body.get('tags', {})
+    
+    # Normalize tags (lowercase and plural mapping)
+    search_tags = {}
+    for k, v in raw_tags.items():
+        k_lower = k.lower()
+        search_tags[PLURAL_MAP.get(k_lower, k_lower)] = v
 
     if not search_tags:
         return {
@@ -126,10 +142,23 @@ def handle_lex_request(event):
         
     species = species_slot['value']['interpretedValue'].lower()
     
-    # 2. Query your GSI for the species
+    # Use the global plural map
+    if species in PLURAL_MAP:
+        species = PLURAL_MAP[species]
+        
+    # Extract the Count slot (default to 1 if not provided)
+    count_slot = slots.get('Count')
+    min_count = 1
+    if count_slot and count_slot.get('value'):
+        try:
+            min_count = int(count_slot['value']['interpretedValue'])
+        except ValueError:
+            min_count = 1
+            
+    # 2. Query your GSI for the species with the dynamic count
     response = table.query(
         IndexName='tag-count-index',
-        KeyConditionExpression=Key('tag').eq(species) & Key('tag_count').gte(1)
+        KeyConditionExpression=Key('tag').eq(species) & Key('tag_count').gte(min_count)
     )
     
     items = response.get('Items', [])
@@ -137,7 +166,7 @@ def handle_lex_request(event):
     if not items:
         return build_lex_response(f"I didn't find any photos of {species}.")
         
-    # 3. Return a single clickable link to the frontend
+    # Return a single clickable link to the frontend
     frontend_url = f"https://aussie-ecoguard-web-908203539695.s3.ap-southeast-2.amazonaws.com/index.html?q={species}"
     
     msg = f"I found {len(items)} photos of {species}. <a href='{frontend_url}' target='_blank'>Click here to view them!</a>"

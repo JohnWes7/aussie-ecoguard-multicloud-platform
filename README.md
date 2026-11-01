@@ -365,6 +365,18 @@ Each user has one subscription. Subscribing again replaces their species.
 
 Like `/upload-url`, it has an `OPTIONS` method for the CORS preflight. To stop the emails, users click the unsubscribe link at the bottom of any SNS email.
 
+### `POST /search` (lost pet, thumbnail URL → original)
+
+The `search` Lambda takes three kinds of body. All need the Cognito sign-in and answer with `Access-Control-Allow-Origin: *`.
+
+| Body | Answer |
+|---|---|
+| `{"tags": {"fox": 2, "cat": 1}}` | Files with at least that many of **every** species (logical AND): `{"results": [{file_id, filename, file_type, tags, thumbnail_url, file_url}]}` |
+| `{"lost_pet": {"species": "cat", "colours": ["orange"], "days": 30}}` | Sightings of that species in everyone's files, newest first. `colours` (optional) keeps files with at least one of them in `attributes`; `days` (optional) keeps files uploaded in the last N days. Same result shape plus `created_at` and `attributes` |
+| `{"thumbnail_url": "https://<bucket>.s3.<region>.amazonaws.com/thumbnails/<sha256>.jpg?..."}` | The original: `{file_id, filename, file_type, file_url, thumbnail_url}`. A signed, unsigned or expired URL and the bare key all work. 400 if it is not a thumbnail URL, 404 if no ready file has that thumbnail |
+
+The website's **Lost pet** tab (`web/lostpet.js`) runs the last two. "Use a photo" fills in the species and colours from `detectFile(file)` and searches, so the photo is never stored. Clicking a result opens the full-size file.
+
 ### Notification emails (`notify` Lambda)
 
 Not an API route. Lambda reads the table's DynamoDB Stream and invokes `notify` with up to 100 records at a time. The trigger's filter passes only `INSERT` records whose `sk` begins with `TAG#`, so each record means "this file gained this tag", from the `tagging` Lambda or a manual tag edit. Changes to `META` items and new counts for an existing tag do not send anything.

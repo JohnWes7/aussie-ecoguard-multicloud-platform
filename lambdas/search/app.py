@@ -1,5 +1,9 @@
 import json
 import os
+import re
+from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote, urlparse
+
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.config import Config
@@ -37,6 +41,12 @@ def handler(event, context):
             'statusCode': 400,
             'body': json.dumps({'error': 'Invalid JSON body'})
         }
+
+    # Other searches on the same route (Spec 4.3)
+    if 'thumbnail_url' in body:
+        return find_original(body['thumbnail_url'])
+    if 'lost_pet' in body:
+        return find_lost_pet(body['lost_pet'])
 
     # The frontend will send a dictionary of tags and counts, e.g., {"fox": 2}
     raw_tags = body.get('tags', {})
@@ -192,4 +202,125 @@ def build_lex_response(message_text):
                 "content": message_text
             }
         ]
+    }
+
+
+# ---------- Thumbnail URL -> original file (Spec 4.3) ----------
+#
+# Body: {"thumbnail_url": "https://<bucket>.s3.<region>.amazonaws.com/thumbnails/<sha256>.jpg?X-Amz-..."}
+# The thumbnail Lambda always writes thumbnails/<sha256>.jpg, and the original
+# is the file with that sha256, so the key alone is enough. A signed URL, an
+# unsigned one or the bare key all work; an expired signature does not matter.
+
+THUMB_KEY_RE = re.compile(r"(?:^|/)thumbnails/([0-9a-f]{64})\.jpg$")
+URL_EXPIRES = 3600  # seconds the returned signed URLs stay valid
+
+
+def find_original(thumbnail_url):
+    if not isinstance(thumbnail_url, str) or not thumbnail_url.strip():
+        return api_response(400, {'error': 'thumbnail_url must be a non-empty string'})
+
+    path = unquote(urlparse(thumbnail_url.strip()).path)
+    match = THUMB_KEY_RE.search(path.lower())
+    if not match:
+        return api_response(400, {'error': 'not a thumbnail URL (expected .../thumbnails/<sha256>.jpg)'})
+    file_id = match.group(1)
+
+    meta = table.get_item(Key={'file_id': file_id, 'sk': 'META'}).get('Item')
+    if not meta or meta.get('status') != 'READY' or 'file_url' not in meta:
+        return api_response(404, {'error': 'no file has this thumbnail'})
+
+    return api_response(200, {
+        'file_id': file_id,
+        'filename': meta.get('filename', ''),
+        'file_type': meta.get('file_type'),
+        'file_url': sign(meta['file_url']),
+        'thumbnail_url': sign(meta['thumb_url']) if 'thumb_url' in meta else None,
+    })
+
+
+# ---------- Lost pet search (Spec 4.3) ----------
+#
+# Body: {"lost_pet": {"species": "cat", "colours": ["orange"], "days": 30}}
+#   species  required, e.g. "cat" or "dog" (any tag works)
+#   colours  optional; a file matches if it has at least one of them. The model
+#            only gives colours for cats and dogs (infra/model/config.json)
+#   days     optional; only sightings uploaded in the last N days
+# Every user's files are searched (public sightings), newest first.
+
+def find_lost_pet(query):
+    if not isinstance(query, dict):
+        return api_response(400, {'error': 'lost_pet must be an object'})
+
+    species = str(query.get('species', '')).strip().lower()
+    species = PLURAL_MAP.get(species, species)
+    if not species:
+        return api_response(400, {'error': 'lost_pet.species is required'})
+
+    colours = query.get('colours') or []
+    if not isinstance(colours, list) or not all(isinstance(c, str) for c in colours):
+        return api_response(400, {'error': 'lost_pet.colours must be a list of strings'})
+    colours = {c.strip().lower() for c in colours if c.strip()}
+
+    days = query.get('days')
+    since = None
+    if days not in (None, ''):
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return api_response(400, {'error': 'lost_pet.days must be a whole number'})
+        if days < 1:
+            return api_response(400, {'error': 'lost_pet.days must be at least 1'})
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    file_ids = set()
+    kwargs = {
+        'IndexName': 'tag-count-index',
+        'KeyConditionExpression': Key('tag').eq(species) & Key('tag_count').gte(1),
+    }
+    while True:
+        page = table.query(**kwargs)
+        file_ids.update(item['file_id'] for item in page.get('Items', []))
+        if 'LastEvaluatedKey' not in page:
+            break
+        kwargs['ExclusiveStartKey'] = page['LastEvaluatedKey']
+
+    results = []
+    for file_id in file_ids:
+        items = table.query(KeyConditionExpression=Key('file_id').eq(file_id)).get('Items', [])
+        meta = next((item for item in items if item['sk'] == 'META'), None)
+        if not meta or 'file_url' not in meta:
+            continue
+        attributes = [str(a).lower() for a in meta.get('attributes', [])]
+        if colours and not colours.intersection(attributes):
+            continue
+        created_at = meta.get('created_at', '')
+        if since and (not created_at or datetime.fromisoformat(created_at) < since):
+            continue
+        results.append({
+            'file_id': file_id,
+            'filename': meta.get('filename', file_id[:12]),
+            'file_type': meta.get('file_type'),
+            'created_at': created_at,
+            'attributes': attributes,
+            'tags': {item['tag']: int(item['tag_count']) for item in items if item['sk'].startswith('TAG#')},
+            'thumbnail_url': sign(meta['thumb_url']) if 'thumb_url' in meta else None,
+            'file_url': sign(meta['file_url']),
+        })
+
+    results.sort(key=lambda r: r['created_at'], reverse=True)
+    return api_response(200, {'results': results})
+
+
+def sign(key):
+    return s3_client.generate_presigned_url(
+        'get_object', Params={'Bucket': BUCKET_NAME, 'Key': key}, ExpiresIn=URL_EXPIRES
+    )
+
+
+def api_response(status, body):
+    return {
+        'statusCode': status,
+        'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+        'body': json.dumps(body),
     }

@@ -70,14 +70,17 @@ def handler(event, context):
     results = []
     
     for file_id in matching_file_ids:
-        # Fetch the META item for this file
-        meta_response = table.get_item(
-            Key={'file_id': file_id, 'sk': 'META'}
-        )
+        # Query ALL items for this file (META and TAG#) in one request
+        file_items = table.query(
+            KeyConditionExpression=Key('file_id').eq(file_id)
+        ).get('Items', [])
         
-        meta_item = meta_response.get('Item')
+        meta_item = next((item for item in file_items if item['sk'] == 'META'), None)
         if not meta_item:
-            continue # Skip if the META item is somehow missing
+            continue
+            
+        # Extract tags from the TAG# items
+        tags = {item['tag']: int(item['tag_count']) for item in file_items if item['sk'].startswith('TAG#')}
             
         # Generate Presigned URLs (valid for 3600 seconds / 1 hour)
         thumb_url = None
@@ -99,9 +102,11 @@ def handler(event, context):
         # Build the result object
         results.append({
             'file_id': file_id,
+            'filename': meta_item.get('filename', file_id[:12]), # Add filename
             'file_type': meta_item.get('file_type'),
             'thumbnail_url': thumb_url,
-            'file_url': file_url
+            'file_url': file_url,
+            'tags': tags # Add tags
         })
         
     # Return the final list of results
@@ -119,7 +124,7 @@ def handle_lex_request(event):
     if not species_slot or not species_slot.get('value'):
         return build_lex_response("I didn't catch which animal you are looking for.")
         
-    species = species_slot['value']['interpretedValue']
+    species = species_slot['value']['interpretedValue'].lower()
     
     # 2. Query your GSI for the species
     response = table.query(
@@ -132,27 +137,11 @@ def handle_lex_request(event):
     if not items:
         return build_lex_response(f"I didn't find any photos of {species}.")
         
-    # 3. Generate Presigned URLs for up to 3 matches
-    urls = []
-    for item in items[:3]: # Lex has a text limit, so we only show the first 3
-        file_id = item['file_id']
-        meta_res = table.get_item(Key={'file_id': file_id, 'sk': 'META'})
-        meta = meta_res.get('Item', {})
-        
-        if 'file_url' in meta:
-            url = s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': BUCKET_NAME, 'Key': meta['file_url']},
-                ExpiresIn=3600
-            )
-            urls.append(url)
-
-    if not urls:
-        return build_lex_response(f"I found {len(items)} photos of {species}, but could not generate URLs for them.")
-
-    # 4. Return the response with all links
-    links_text = "\n".join(urls)
-    msg = f"I found {len(items)} photos of {species}. Here are the links:\n{links_text}"
+    # 3. Return a single clickable link to the frontend
+    frontend_url = f"https://aussie-ecoguard-web-908203539695.s3.ap-southeast-2.amazonaws.com/index.html?q={species}"
+    
+    msg = f"I found {len(items)} photos of {species}. <a href='{frontend_url}' target='_blank'>Click here to view them!</a>"
+    
     return build_lex_response(msg)
 
 

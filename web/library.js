@@ -24,6 +24,10 @@ const searchContainer = el("div", "d-flex gap-2 mb-3");
 searchContainer.innerHTML = `
   <input type="text" id="search-input" class="form-control" placeholder="Enter a tag (e.g., fox, feral pig)">
   <button id="search-btn" class="btn btn-primary">Search</button>
+  
+  <label for="image-search-input" class="btn btn-outline-primary mb-0">Search by Image</label>
+  <input type="file" id="image-search-input" accept="image/jpeg, image/png" style="display: none;">
+  
   <button id="clear-search-btn" class="btn btn-outline-secondary" hidden>Clear</button>
 `;
 grid.parentNode.insertBefore(searchContainer, grid);
@@ -33,6 +37,44 @@ document.getElementById("clear-search-btn").addEventListener("click", () => {
   document.getElementById("search-input").value = "";
   document.getElementById("clear-search-btn").hidden = true;
   loadFiles(); // Reload the normal library
+});
+
+// Handle the image selection
+document.getElementById("image-search-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const label = document.querySelector('label[for="image-search-input"]');
+  const originalText = label.textContent;
+  label.textContent = "Detecting...";
+  label.classList.add("disabled"); // Visually disable it
+
+  try {
+    // 1. Call Yijiang's GCP detectFile function
+    const detectResult = await detectFile(file);
+    
+    // 2. Send the resulting tags to your /search endpoint
+    const response = await apiFetch("/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: detectResult.tags })
+    });
+
+    if (!response.ok) throw new Error("Search failed");
+    const rawData = await response.json();
+    const parsedData = rawData.body ? JSON.parse(rawData.body) : rawData;
+    
+    // 3. Render the results
+    renderSearchResults(parsedData.results);
+    document.getElementById("clear-search-btn").hidden = false;
+
+  } catch (err) {
+    alert(`Image Search Error: ${err.message}`);
+  } finally {
+    label.textContent = originalText;
+    label.classList.remove("disabled");
+    e.target.value = ""; // Reset file input
+  }
 });
 
 // Create and inject the Chat Widget UI
@@ -280,6 +322,7 @@ async function handleDelete(fileId) {
     // Remove the card from the DOM instantly without reloading the page
     const card = document.querySelector(`[data-file-id="${fileId}"]`);
     if (card) card.remove();
+    loadFiles(); // Force a reload from DynamoDB to update the grid state
     
   } catch (err) {
     alert(`Error: ${err.message}`);
@@ -331,7 +374,6 @@ async function handleSearch() {
   if (!tag) return;
 
   try {
-    // Send {"tags": {"fox": 1}} to your search Lambda
     const response = await apiFetch("/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -340,40 +382,14 @@ async function handleSearch() {
 
     if (!response.ok) throw new Error("Search failed");
     
-    const data = await response.json();
-    const results = data.results || [];
-
-    // Clear the current grid
-    grid.replaceChildren();
+    const rawData = await response.json();
+    const parsedData = rawData.body ? JSON.parse(rawData.body) : rawData;
+    
+    renderSearchResults(parsedData.results);
     document.getElementById("clear-search-btn").hidden = false;
 
-    if (results.length === 0) {
-      grid.append(el("div", "text-center py-5 text-body-secondary", "No files found for this tag."));
-      return;
-    }
-
-    // Render the results
-    for (const item of results) {
-      const col = el("div", "col");
-      const card = el("div", "card h-100 shadow-sm");
-      
-      // Create the preview using the presigned URL from the search Lambda
-      const img = el("img", "card-img-top preview");
-      img.src = item.thumbnail_url || item.file_url;
-      img.style.objectFit = "cover";
-      img.style.height = "200px";
-      
-      const body = el("div", "card-body");
-      const title = el("h3", "card-title h6 text-truncate", item.file_id.slice(0, 12));
-      
-      card.append(img, body);
-      body.append(title);
-      col.append(card);
-      grid.append(col);
-    }
-    
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    alert(`Search Error: ${err.message}`);
   }
 }
 
@@ -422,3 +438,64 @@ document.getElementById("chat-send-btn").addEventListener("click", sendChatMessa
 document.getElementById("chat-input").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendChatMessage();
 });
+
+function renderSearchResults(results) {
+  grid.replaceChildren();
+  document.getElementById("clear-search-btn").hidden = false;
+
+  if (!results || results.length === 0) {
+    grid.append(el("div", "text-center py-5 text-body-secondary", "No files found."));
+    return;
+  }
+
+  for (const item of results) {
+    const col = el("div", "col");
+    const card = el("div", "card h-100 shadow-sm");
+    
+    // Create the preview using the presigned URL
+    const img = el("img", "card-img-top preview");
+    img.src = item.thumbnail_url || item.file_url;
+    img.style.objectFit = "cover";
+    img.style.height = "200px";
+    
+    const body = el("div", "card-body");
+    
+    // Use the filename sent from the backend
+    const title = el("h3", "card-title h6 text-truncate", item.filename || item.file_id.slice(0, 12));
+    body.append(title);
+
+    // Render the tags as badges
+    const tagsDiv = el("div", "mb-2");
+    if (item.tags && Object.keys(item.tags).length > 0) {
+      for (const [species, count] of Object.entries(item.tags)) {
+        tagsDiv.append(badge(`${species} × ${count}`, "success"));
+      }
+    } else {
+      tagsDiv.append(el("span", "small text-body-secondary", "No animals detected"));
+    }
+    body.append(tagsDiv);
+    
+    card.append(img, body);
+    col.append(card);
+    grid.append(col);
+  }
+}
+
+// Check if the URL has a ?q= parameter (e.g., from a Lex chat link)
+document.addEventListener("DOMContentLoaded", () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const query = urlParams.get('q');
+  
+  if (query) {
+    // Wait a tiny bit for the DOM to fully inject the search bar
+    setTimeout(() => {
+      const searchInput = document.getElementById("search-input");
+      if (searchInput) {
+        searchInput.value = query;
+        // Trigger the search function we wrote earlier
+        handleSearch();
+      }
+    }, 500);
+  }
+});
+

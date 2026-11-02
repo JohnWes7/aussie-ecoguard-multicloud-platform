@@ -22,9 +22,9 @@ if (window.CONFIG) loadFiles();
 // Create and inject the search bar UI
 const searchContainer = el("div", "d-flex gap-2 mb-3");
 searchContainer.innerHTML = `
-  <input type="text" id="search-input" class="form-control" placeholder="Enter a tag (e.g., fox, feral pig)">
+  <input type="text" id="search-input" class="form-control" placeholder="Search (e.g., fox, or 3 dogs and 2 cats)">
   <button id="search-btn" class="btn btn-primary">Search</button>
-  
+
   <label for="image-search-input" class="btn btn-outline-primary mb-0">Search by Image</label>
   <input type="file" id="image-search-input" accept="image/jpeg, image/png" style="display: none;">
   
@@ -347,16 +347,53 @@ async function handleEditTags(fileId) {
   }
 }
 
+function parseSearchQuery(input) {
+  const query = input.trim();
+  
+  // 1. If it's JSON, parse it directly
+  if (query.startsWith("{") && query.endsWith("}")) {
+    try { return JSON.parse(query); } catch (e) { return null; }
+  }
+
+  const result = {};
+  // 2. Split by "and" or "," (case-insensitive)
+  const parts = query.split(/\s+and\s+|,/i);
+
+  for (let part of parts) {
+    part = part.trim();
+    if (!part) continue;
+
+    // 3. Match: A number followed by text (e.g., "3 dogs")
+    const match = part.match(/^(\d+)\s+(.+)$/);
+    if (match) {
+      const count = parseInt(match[1], 10);
+      const species = match[2].trim();
+      result[species] = count; // We leave plurals (e.g., "dogs") for the backend to handle
+    } else {
+      // 4. No number found, default to 1 (e.g., just "dogs")
+      result[part] = 1;
+    }
+  }
+  return result;
+}
+
 async function handleSearch() {
   const input = document.getElementById("search-input");
-  const tag = input.value.trim().toLowerCase();
-  if (!tag) return;
+  const rawValue = input.value.trim();
+  if (!rawValue) return;
+
+  const tagsToSearch = parseSearchQuery(rawValue);
+  
+  if (!tagsToSearch || Object.keys(tagsToSearch).length === 0) {
+    alert("Invalid search format. Try '3 dogs and 2 cats' or {\"dog\": 3, \"cat\": 2}");
+    return;
+  }
 
   try {
     const response = await apiFetch("/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tags: { [tag]: 1 } })
+      body: JSON.stringify({ tags: tagsToSearch })
     });
 
     if (!response.ok) throw new Error("Search failed");

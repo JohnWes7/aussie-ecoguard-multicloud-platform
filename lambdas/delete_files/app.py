@@ -18,6 +18,7 @@ def handler(event, context):
     except json.JSONDecodeError:
         return {
             'statusCode': 400,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Invalid JSON body'})
         }
 
@@ -27,6 +28,7 @@ def handler(event, context):
     if not urls:
         return {
             'statusCode': 400,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Missing urls'})
         }
 
@@ -53,6 +55,7 @@ def handler(event, context):
     except Exception as e:
         return {
             'statusCode': 500,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Failed to delete files from S3', 'details': str(e)})
         }
 
@@ -75,11 +78,12 @@ def handler(event, context):
     except Exception as e:
         return {
             'statusCode': 500,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Failed to delete database records', 'details': str(e)})
         }
-    
 
     return {
         'statusCode': 200,
+        'headers': {'Access-Control-Allow-Origin': '*'},
         'body': json.dumps({'message': 'Files deleted successfully'})
     }

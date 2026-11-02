@@ -14,6 +14,7 @@ def handler(event, context):
     except json.JSONDecodeError:
         return {
             'statusCode': 400,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Invalid JSON body'})
         }
 
@@ -26,6 +27,7 @@ def handler(event, context):
     if not urls or operation is None or not tags:
         return {
             'statusCode': 400,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Missing urls, operation, or tags'})
         }
 
@@ -33,6 +35,7 @@ def handler(event, context):
     if operation not in [0, 1]:
         return {
             'statusCode': 400,
+            'headers': {'Access-Control-Allow-Origin': '*'},
             'body': json.dumps({'error': 'Invalid operation. Must be 0 or 1.'})
         }
 
@@ -61,6 +64,7 @@ def handler(event, context):
         except Exception as e:
             return {
                 'statusCode': 500,
+                'headers': {'Access-Control-Allow-Origin': '*'},
                 'body': json.dumps({'error': 'Failed to remove tags', 'details': str(e)})
             }
 
@@ -100,6 +104,7 @@ def handler(event, context):
         except Exception as e:
             return {
                 'statusCode': 400,
+                'headers': {'Access-Control-Allow-Origin': '*'},
                 'body': json.dumps({'error': 'Transaction failed. File may not exist.', 'details': str(e)})
             }
 
@@ -107,5 +112,6 @@ def handler(event, context):
     # Default response
     return {
         'statusCode': 200,
+        'headers': {'Access-Control-Allow-Origin': '*'},
         'body': json.dumps({'message': 'Tags updated successfully'})
     }

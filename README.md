@@ -17,7 +17,7 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
 | Thumbnails: `thumbnail` Lambda (EventBridge rule → Pillow → `thumbnails/<sha256>.jpg`), shown on the library cards | Deployed |
-| Video thumbnails: one frame (1 s in) taken with ffmpeg, shown as the video's poster in the library | Built, not deployed yet |
+| Video thumbnails: one frame (1 s in) taken with ffmpeg, shown as the video's poster in the library | Deployed |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
 | `POST /subscriptions` (subscribe to email notifications per species, SNS) | Deployed, Cognito sign-in required |
 | Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | Deployed |

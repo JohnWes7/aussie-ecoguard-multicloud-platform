@@ -47,4 +47,7 @@ locals {
   # Every function's execution role (iam.tf). The name is from when this was
   # Learner Lab's LabRole.
   lab_role = aws_iam_role.lambda.arn
+  # The chat bot's alias (variables.tf): the chat function calls it, and it
+  # calls the search function.
+  lex_bot_alias_arn = "arn:aws:lex:${local.region}:${local.account_id}:bot-alias/${var.lex_bot_id}/${var.lex_bot_alias_id}"
 }

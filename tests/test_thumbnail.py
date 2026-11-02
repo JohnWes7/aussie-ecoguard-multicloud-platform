@@ -1,12 +1,17 @@
 """Unit tests for lambdas/thumbnail (S3 -> EventBridge -> thumbnail -> thumbnails/).
 
 The images are made with Pillow in memory, except one test that uses the
-smoke test's real photo.
+smoke test's real photo. The videos are made with the ffmpeg that the
+imageio-ffmpeg package installs (tests/requirements.txt), the same build the
+Lambda layer uses.
 """
 
 import hashlib
 import io
+import subprocess
 from pathlib import Path
+
+import imageio_ffmpeg
 
 import boto3
 import pytest
@@ -134,12 +139,98 @@ def test_transparent_png_gets_a_white_background(app, s3):
     assert min(r, g, b) > 240  # white, not black or red
 
 
-def test_video_is_skipped(app, s3):
+def make_video(tmp_path, *filters, extra=(), suffix=".mp4"):
+    """Encode a small H.264 video from ffmpeg test sources and return its bytes.
+
+    Each filter is one lavfi source, e.g. "color=c=black:s=640x360:d=1"; they
+    are played one after another.
+    """
+    path = tmp_path / f"clip{suffix}"
+    inputs = []
+    for f in filters:
+        inputs += ["-f", "lavfi", "-i", f]
+    concat = "".join(f"[{i}:v]" for i in range(len(filters))) + f"concat=n={len(filters)}:v=1:a=0"
+    subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-y", *inputs,
+         "-filter_complex", concat, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "10", *extra, str(path)],
+        check=True,
+    )
+    return path.read_bytes()
+
+
+def test_video_gets_a_thumbnail(app, s3, tmp_path):
+    upload(s3, make_video(tmp_path, "testsrc=s=1280x720:d=3"), content_type="video/mp4")
+
+    result = app.handler(event(), None)
+
+    thumb = saved_thumbnail(s3)
+    assert result["thumb_key"] == THUMB_KEY
+    assert thumb.format == "JPEG"
+    assert thumb.size == (512, 288)
+
+
+def test_video_frame_is_taken_after_the_first_second(app, s3, tmp_path):
+    # Like a camera trap clip that starts dark: black at first, then orange.
+    video = make_video(tmp_path, "color=c=black:s=320x240:d=0.5", "color=c=orange:s=320x240:d=2")
+    upload(s3, video, content_type="video/mp4")
+
+    app.handler(event(), None)
+
+    r, g, b = saved_thumbnail(s3).getpixel((160, 120))
+    assert r > 200 and 100 < g < 200 and b < 60  # orange, not black
+
+
+def test_video_shorter_than_a_second_uses_its_first_frame(app, s3, tmp_path):
+    upload(s3, make_video(tmp_path, "color=c=orange:s=320x240:d=0.5"), content_type="video/mp4")
+
+    result = app.handler(event(), None)
+
+    assert result["thumb_key"] == THUMB_KEY
+    assert saved_thumbnail(s3).size == (320, 240)
+
+
+def test_quicktime_video_from_a_phone_is_turned_upright(app, s3, tmp_path):
+    # Recorded sideways (landscape pixels) with "rotate 90°" metadata, like a .mov from an iPhone held upright.
+    plain = make_video(tmp_path, "testsrc=s=640x480:d=2", suffix=".mov")
+    sideways = tmp_path / "sideways.mov"
+    subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-y", "-display_rotation", "90",
+         "-i", str(tmp_path / "clip.mov"), "-c", "copy", str(sideways)],
+        check=True,
+    )
+    assert plain  # the clip itself was made
+    upload(s3, sideways.read_bytes(), content_type="video/quicktime")
+
+    app.handler(event(), None)
+
+    assert saved_thumbnail(s3).size == (384, 512)
+
+
+def test_broken_video_is_skipped_without_raising(app, s3):
     upload(s3, b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100, content_type="video/mp4")
 
     result = app.handler(event(), None)
 
-    assert result == {"skipped": "not an image"}
+    assert result == {"skipped": "unreadable"}
+    assert not has_thumbnail(s3)
+
+
+def test_too_big_video_is_skipped(app, s3, tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "MAX_VIDEO_BYTES", 100)
+    upload(s3, make_video(tmp_path, "testsrc=s=320x240:d=1"), content_type="video/mp4")
+
+    result = app.handler(event(), None)
+
+    assert result == {"skipped": "too big"}
+    assert not has_thumbnail(s3)
+
+
+def test_other_files_are_skipped(app, s3):
+    upload(s3, b"%PDF-1.7", content_type="application/pdf")
+
+    result = app.handler(event(), None)
+
+    assert result == {"skipped": "not an image or video"}
     assert not has_thumbnail(s3)
 
 
@@ -197,3 +288,21 @@ def test_running_twice_overwrites_the_same_thumbnail(app, s3):
 
     keys = [o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="thumbnails/")["Contents"]]
     assert keys == [THUMB_KEY]
+
+
+def test_ffmpeg_without_the_executable_bit_is_copied_to_tmp(app, monkeypatch, tmp_path):
+    # If the layer zip loses the file mode (e.g. zipped on Windows), the
+    # read-only layer copy cannot run, so the function runs a copy in /tmp.
+    package = tmp_path / "layer" / "imageio_ffmpeg"
+    (package / "binaries").mkdir(parents=True)
+    bundled = package / "binaries" / "ffmpeg-linux-x86_64-v7.0.2"
+    bundled.write_bytes(Path(imageio_ffmpeg.get_ffmpeg_exe()).read_bytes())
+    bundled.chmod(0o644)
+    monkeypatch.setattr(imageio_ffmpeg, "__file__", str(package / "__init__.py"))
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    monkeypatch.setattr(app, "_ffmpeg", None)
+
+    path = app.ffmpeg_path()
+
+    assert path == str(tmp_path / "ffmpeg")
+    assert subprocess.run([path, "-version"], capture_output=True).returncode == 0

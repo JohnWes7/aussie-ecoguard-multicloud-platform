@@ -17,6 +17,7 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | `GET /files`, `GET /files/{sha256}` (file list and status for the website) | Deployed, Cognito sign-in required |
 | Website (`web/`, Bootstrap): upload panel and library of files with their tags | Deployed |
 | Thumbnails: `thumbnail` Lambda (EventBridge rule → Pillow → `thumbnails/<sha256>.jpg`), shown on the library cards | Deployed |
+| Video thumbnails: one frame (1 s in) taken with ffmpeg, shown as the video's poster in the library | Built, not deployed yet |
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
 | `POST /subscriptions` (subscribe to email notifications per species, SNS) | Deployed, Cognito sign-in required |
 | Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | Deployed |
@@ -50,7 +51,7 @@ infra/
 lambdas/
   upload_url/app.py  POST /upload-url
   tagging/app.py     Runs inference on each new upload and saves the tags
-  thumbnail/app.py   Saves a small JPEG of each new image upload in thumbnails/
+  thumbnail/app.py   Saves a small JPEG of each new image (or a frame of each video) in thumbnails/
   files/app.py       GET /files and GET /files/{sha256}
   subscribe/app.py   POST /subscriptions
   notify/app.py      Emails subscribers about new tags (DynamoDB Stream -> SNS)
@@ -77,7 +78,7 @@ scripts/
 
 - AWS CLI v2.32 or newer (for `aws login`)
 - Terraform 1.10 or newer (for the S3 state lock)
-- Python 3.10 or newer, with `pip3` on your PATH (`apply` uses it to install Pillow for the `thumbnail` Lambda)
+- Python 3.10 or newer, with `pip3` on your PATH (`apply` uses it to install Pillow and ffmpeg for the `thumbnail` Lambda)
 - A bash shell. On Windows use **Git Bash**, not PowerShell (see [Troubleshooting](#troubleshooting))
 - A personal AWS account: your own, or access to the team's shared one (Yijiang's). AWS Academy Learner Lab does not work, because it blocks Amazon Lex and cannot create IAM roles
 - Only for the person hosting the inference service: the gcloud CLI and a GCP project with billing enabled
@@ -129,7 +130,7 @@ The infrastructure is in two Terraform directories, each with its own state:
 Run the same `apply` after every change. Terraform shows the plan (what it will create, change or delete) and asks for `yes`. **Read the plan before typing `yes`:** everyone applies to the same deployment, so if it would undo a change you did not make, someone else has applied newer code: `git pull` first. It only changes resources whose definition changed. One `apply` does everything:
 
 - Zips each `lambdas/<name>/` folder (`archive_file`) and updates a function only when its code changed.
-- On the first `apply`, installs Pillow for Lambda's platform (Linux, Python 3.12) with `pip3` into `infra/terraform/aws/build/pillow-layer/` and publishes it as a Lambda layer for `thumbnail`. Later `apply`s reuse it, until `pillow_version` in `thumbnails.tf` changes.
+- On the first `apply`, installs Pillow for Lambda's platform (Linux, Python 3.12) with `pip3` into `infra/terraform/aws/build/pillow-layer/` and publishes it as a Lambda layer for `thumbnail`. Later `apply`s reuse it, until `pillow_version` in `thumbnails.tf` changes. The same goes for ffmpeg: `pip3` installs `imageio-ffmpeg` (which contains a static Linux ffmpeg) into `build/ffmpeg-layer/`, published as a second layer (about 30 MB zipped).
 - Publishes the REST API to the `api` stage whenever `api.tf` or its routes change (`triggers` on `aws_api_gateway_deployment`).
 - Turns the tagging queue trigger (SQS → `tagging` Lambda) back on if Lambda has disabled it (see [Troubleshooting](#troubleshooting)): the config says `enabled = true`, so Terraform puts it back.
 - Uploads `web/` to the website bucket with `Cache-Control: no-cache` (a reload always picks up the new version), plus a generated `config.js` with this deployment's API URL. A file deleted from `web/` is deleted from the bucket.
@@ -173,7 +174,7 @@ Switch back to the shared deployment with `terraform -chdir=infra/terraform/aws 
 | `aws/variables.tf` | `inference_url` |
 | `aws/storage.tf` | Media and website buckets, DynamoDB table and its stream |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
-| `aws/thumbnails.tf` | Pillow layer, `thumbnail` Lambda, and its target on the EventBridge rule |
+| `aws/thumbnails.tf` | Pillow and ffmpeg layers, `thumbnail` Lambda, and its target on the EventBridge rule |
 | `aws/api.tf` | REST API routes and the `upload-url`, `files` and `subscribe` Lambdas |
 | `aws/notifications.tf` | SNS topic for email notifications, the `notify` Lambda and its stream trigger |
 | `aws/cognito.tf` | Cognito user pool, app client, sign-in domain and the smoke test's user |
@@ -201,7 +202,7 @@ The two S3 buckets are created and deleted with the aws CLI (`terraform_data` in
 | AWS | Cognito test user | `smoke-test@example.com`, password `Smoke-Test-2026` (written in `aws/cognito.tf`), for the smoke test. Leave it in place. Anyone who can read this repository can sign in with it |
 | AWS | SNS topic | `aussie-ecoguard-notifications`, display name "Aussie EcoGuard" (the sender name on its emails). One email subscription per user, each with a filter policy on `species` |
 | AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue and `thumbnail` Lambda |
-| AWS | Thumbnail Lambda and layer | `aussie-ecoguard-thumbnail` (role: `aussie-ecoguard-lambda`) with the layer `aussie-ecoguard-pillow` (Pillow 11.3.0) |
+| AWS | Thumbnail Lambda and layer | `aussie-ecoguard-thumbnail` (role: `aussie-ecoguard-lambda`) with the layers `aussie-ecoguard-pillow` (Pillow 11.3.0) and `aussie-ecoguard-ffmpeg` (imageio-ffmpeg 0.6.0, ffmpeg 7.0.2) |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
 | GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4`, public. It was chosen to sit next to AWS when AWS ran in `us-east-1`; AWS now runs in `ap-southeast-2` |
 | GCP (shared) | Model bucket (private) | `aussie-ecoguard-models-<project-number>`, one folder per model version |
@@ -300,13 +301,13 @@ Also no API call: the same EventBridge rule invokes the `thumbnail` Lambda direc
 S3 Object Created (uploads/) → EventBridge rule → thumbnail Lambda → S3 thumbnails/<sha256>.jpg
 ```
 
-1. `thumbnail` reads the object and checks its `Content-Type` (set by `/upload-url`; keys have no extension). Anything that is not `image/*` is skipped before its body is read, so videos get no thumbnail.
-2. It scales the image down with Pillow so the longest side is 512 px (`THUMB_SIZE`), keeping the aspect ratio. Smaller images are not enlarged. Phone photos are turned upright from their EXIF orientation, and transparent PNGs get a white background.
+1. `thumbnail` reads the object and checks its `Content-Type` (set by `/upload-url`; keys have no extension). Anything that is not `image/*` or `video/*` is skipped before its body is read. For a video, it copies the file to `/tmp` (an MP4's index is often at the end, so ffmpeg needs to seek) and has ffmpeg decode one frame 1 s in (`VIDEO_FRAME_SECONDS`; the very first frame is often black), or the first frame if the video is shorter. ffmpeg turns phone videos upright from their rotation metadata.
+2. It scales the image (or the frame) down with Pillow so the longest side is 512 px (`THUMB_SIZE`), keeping the aspect ratio. Smaller images are not enlarged. Phone photos are turned upright from their EXIF orientation, and transparent PNGs get a white background.
 3. It saves a JPEG at quality 70 (`THUMB_QUALITY`) to `thumbnails/<sha256>.jpg`, usually 20–60 KB instead of several MB. The rule only matches `uploads/`, so this does not trigger anything again.
 
 The thumbnail's key depends only on the file's SHA-256, so `tagging` stores `thumb_url` in `META` when the image becomes `READY` without waiting for `thumbnail`, and `GET /files` returns it signed. The thumbnail is normally there seconds before tagging finishes. Running the function twice just writes the same object again.
 
-Images that cannot be read (corrupt, or a format Pillow does not know) and images over 50 MB (`MAX_BYTES`) are logged and skipped without an error, because retrying would not help; the library then shows the original. Other errors (e.g. S3 throttling) make Lambda retry twice. `delete-files` already deletes `thumbnails/<sha256>.jpg` with the original.
+Images that cannot be read (corrupt, or a format Pillow does not know), videos ffmpeg cannot read, images over 50 MB (`MAX_BYTES`) and videos over 500 MB (`MAX_VIDEO_BYTES`) are logged and skipped without an error, because retrying would not help; the library then shows the original image, or lets the browser load the video's first frame. The function has 1 GB of memory, 1 GB of `/tmp` and a 90 s timeout for the largest videos. Other errors (e.g. S3 throttling) make Lambda retry twice. `delete-files` already deletes `thumbnails/<sha256>.jpg` with the original.
 
 Lambda logs: `/aws/lambda/aussie-ecoguard-thumbnail`, one line per file such as `saved thumbnails/<sha256>.jpg (31406 bytes)` or the reason it was skipped.
 
@@ -325,7 +326,7 @@ Lists every file with its tags, newest first. The website's library uses it.
 
 - `PENDING` files are listed only while their upload URL is still valid (15 minutes). After that nobody can upload them, so they are abandoned reservations.
 - `FAILED` files have an `error` field.
-- `READY` images also have `thumb_url`, a presigned GET URL of `thumbnails/<sha256>.jpg` (see [Thumbnails](#thumbnails-after-the-upload)). Videos and unfinished files have none. In rare cases (the image could not be read) the object does not exist, so show `preview_url` if it fails to load.
+- `READY` images and videos also have `thumb_url`, a presigned GET URL of `thumbnails/<sha256>.jpg` (see [Thumbnails](#thumbnails-after-the-upload)); for a video it is one frame. Unfinished files, and videos tagged before video thumbnails existed, have none. In rare cases (the file could not be read) the object does not exist, so show `preview_url` if it fails to load. The library uses a video's `thumb_url` as its poster and loads nothing else until play is pressed.
 - `PENDING` files also have `uploaded`: `false` while the browser's `PUT` has not arrived, `true` once the file is in S3 and only waits in the tagging queue (at most 2 files are tagged at a time, so a burst of uploads waits there). The Lambda checks this with an S3 `HeadObject`, because the table only changes when tagging starts. A `preview_url` is given as soon as the file is in S3.
 - `filename` is the name sent to `/upload-url` (empty for files uploaded before it was stored). It is only for display.
 - The Lambda reads the whole table with a `Scan`, which is fine for a few hundred files. Paging would need a GSI on `created_at`.

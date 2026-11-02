@@ -139,12 +139,13 @@ def test_cloud_run_gets_a_presigned_url_and_the_file_type(app, table, cloud_run)
     assert "X-Amz-Signature" in request["url"]
 
 
-def test_video_has_no_thumbnail(app, table, cloud_run):
+def test_video_gets_a_thumbnail_url_too(app, table, cloud_run):
+    # The thumbnail Lambda saves a frame of the video under the same key.
     put_meta(table, file_type="video")
 
     app.handler(sqs_event(), None)
 
-    assert "thumb_url" not in get_meta(table)
+    assert get_meta(table)["thumb_url"] == f"thumbnails/{SHA}.jpg"
 
 
 def test_no_animals_is_ready_without_tags(app, table, cloud_run):

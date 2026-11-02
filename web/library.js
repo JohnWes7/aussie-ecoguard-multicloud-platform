@@ -212,9 +212,26 @@ function renderPreview(file) {
   }
   if (file.file_type === "video") {
     const video = el("video", "card-img-top preview");
-    video.src = file.preview_url;
     video.controls = true;
-    video.preload = "metadata"; // only the first bytes until play is pressed
+    if (!file.thumb_url) {
+      video.preload = "metadata"; // only the first bytes until play is pressed
+      video.src = file.preview_url;
+      return video;
+    }
+    // READY videos show a frame from the thumbnail Lambda as the poster and
+    // download nothing until play is pressed. If the thumbnail is not there
+    // (not made yet, or the video could not be read), fall back to letting
+    // the browser load the first frame itself.
+    video.preload = "none";
+    video.poster = file.thumb_url;
+    video.src = file.preview_url;
+    const probe = new Image();
+    probe.addEventListener("error", () => {
+      video.removeAttribute("poster");
+      video.preload = "metadata";
+      video.load();
+    }, { once: true });
+    probe.src = file.thumb_url;
     return video;
   }
   // READY images show the small thumbnail (tens of KB instead of the whole

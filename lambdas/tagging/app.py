@@ -233,8 +233,9 @@ def save_result(file_id, file_type, result):
         ":model": {"S": result["model"]},
         ":now": {"S": datetime.now(timezone.utc).isoformat()},
     }
-    # Thumbnail keys are fixed, so the URL can be saved before the thumbnail exists.
-    if file_type == "image":
+    # Thumbnail keys are fixed, so the URL can be saved before the thumbnail
+    # exists. The thumbnail Lambda makes one for videos too (a frame from it).
+    if file_type in ("image", "video"):
         update += ", thumb_url = :thumb"
         values[":thumb"] = {"S": f"thumbnails/{file_id}.jpg"}
 

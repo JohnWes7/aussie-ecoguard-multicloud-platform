@@ -127,7 +127,7 @@ def test_ready_image_has_a_thumbnail_url(app, table):
 
 
 def test_no_thumbnail_url_without_thumb_url(app, table):
-    # Videos, and images that are not READY yet.
+    # Files tagged before thumbnails existed, and files that are not READY yet.
     put_file(table, FOX, file_type="video")
     put_file(table, CAT, status="PROCESSING")
 

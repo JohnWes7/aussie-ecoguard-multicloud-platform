@@ -77,44 +77,6 @@ document.getElementById("image-search-input").addEventListener("change", async (
   }
 });
 
-// Create and inject the Chat Widget UI
-const chatContainer = el("div", "position-fixed bottom-0 end-0 m-3 shadow-lg");
-chatContainer.style.zIndex = "1050";
-chatContainer.innerHTML = `
-  <div class="card" style="width: 350px; height: 450px; display: flex; flex-direction: column;">
-    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
-      <span>Aussie EcoGuard AI</span>
-      <button class="btn-close btn-close-white" id="chat-close-btn"></button>
-    </div>
-    <div class="card-body overflow-auto flex-grow-1" id="chat-messages" style="background-color: #f8f9fa;">
-      <div class="text-muted small text-center mb-2">Ask me to find an animal!</div>
-    </div>
-    <div class="card-footer p-2">
-      <div class="input-group">
-        <input type="text" id="chat-input" class="form-control" placeholder="Find me a fox...">
-        <button class="btn btn-primary" id="chat-send-btn">Send</button>
-      </div>
-    </div>
-  </div>
-`;
-document.body.append(chatContainer);
-
-// Add a button to reopen the chat if closed
-const chatToggleBtn = el("button", "btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-3 shadow");
-chatToggleBtn.innerHTML = "Chat";
-chatToggleBtn.style.display = "none";
-chatToggleBtn.style.zIndex = "1050";
-document.body.append(chatToggleBtn);
-
-document.getElementById("chat-close-btn").addEventListener("click", () => {
-  chatContainer.style.display = "none";
-  chatToggleBtn.style.display = "block";
-});
-chatToggleBtn.addEventListener("click", () => {
-  chatContainer.style.display = "block";
-  chatToggleBtn.style.display = "none";
-});
-
 async function loadFiles() {
   if (loading) { // one request at a time; an upload that finished meanwhile still shows up
     reloadWanted = true;
@@ -392,52 +354,6 @@ async function handleSearch() {
     alert(`Search Error: ${err.message}`);
   }
 }
-
-// Generate a unique session ID for this browser session
-const CHAT_SESSION_ID = Math.random().toString(36).substring(2, 15);
-
-async function sendChatMessage() {
-  const input = document.getElementById("chat-input");
-  const messagesDiv = document.getElementById("chat-messages");
-  const text = input.value.trim();
-  if (!text) return;
-
-  // 1. Append the user's message to the chat window
-  const userMsg = el("div", "mb-2 text-end");
-  userMsg.innerHTML = `<span class="badge bg-primary text-wrap text-start" style="max-width: 80%;">${text}</span>`;
-  messagesDiv.append(userMsg);
-  input.value = ""; // Clear input
-  messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
-
-  // 2. Call the /chat Lambda
-  try {
-    const response = await apiFetch("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: text, sessionId: CHAT_SESSION_ID })
-    });
-
-    if (!response.ok) throw new Error("Failed to reach chat API");
-    const data = await response.json();
-
-    // 3. Append Lex's reply to the chat window
-    const botMsg = el("div", "mb-2 text-start");
-    botMsg.innerHTML = `<span class="badge bg-secondary text-wrap text-start" style="max-width: 80%;">${data.message}</span>`;
-    messagesDiv.append(botMsg);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
-
-  } catch (err) {
-    const errorMsg = el("div", "mb-2 text-start");
-    errorMsg.innerHTML = `<span class="badge bg-danger text-wrap text-start">Error: ${err.message}</span>`;
-    messagesDiv.append(errorMsg);
-  }
-}
-
-// Add event listeners for clicking "Send" and pressing "Enter"
-document.getElementById("chat-send-btn").addEventListener("click", sendChatMessage);
-document.getElementById("chat-input").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendChatMessage();
-});
 
 function renderSearchResults(results) {
   grid.replaceChildren();

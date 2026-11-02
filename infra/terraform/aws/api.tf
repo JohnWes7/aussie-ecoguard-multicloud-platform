@@ -747,10 +747,20 @@ resource "aws_lambda_function" "chat" {
 
   environment {
     variables = {
-      BOT_ID       = "2VC6CJK2LJ"     # We will update this when Lex is ready
-      BOT_ALIAS_ID = "TSTALIASID"   # We will update this when Lex is ready
+      BOT_ID       = var.lex_bot_id
+      BOT_ALIAS_ID = var.lex_bot_alias_id
+      BUCKET_NAME  = terraform_data.media_bucket.output # signs the result thumbnails
     }
   }
+}
+
+# The bot alias runs the search Lambda as its fulfilment code hook.
+resource "aws_lambda_permission" "lex_search" {
+  statement_id  = "AllowLexBotAlias"
+  function_name = aws_lambda_function.search.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "lexv2.amazonaws.com"
+  source_arn    = local.lex_bot_alias_arn
 }
 
 resource "aws_api_gateway_resource" "chat" {

@@ -25,9 +25,23 @@ resource "aws_iam_role_policy_attachment" "lambda" {
     "arn:aws:iam::aws:policy/AmazonS3FullAccess",
     "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess", # includes stream reads
     "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
-    "arn:aws:iam::aws:policy/AmazonLexFullAccess",
   ])
 
   role       = aws_iam_role.lambda.name
   policy_arn = each.value
+}
+
+# The chat function only needs to send text to the one bot alias, so it gets
+# that single action instead of AmazonLexFullAccess.
+resource "aws_iam_role_policy" "lex_chat" {
+  name = "lex-recognize-text"
+  role = aws_iam_role.lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["lex:RecognizeText"]
+      Resource = local.lex_bot_alias_arn
+    }]
+  })
 }

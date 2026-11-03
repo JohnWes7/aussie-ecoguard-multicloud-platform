@@ -6,7 +6,7 @@ The full design is in [architecture/README.md](architecture/README.md). This REA
 
 ## Current status
 
-The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website, the AWS API and the inference service require a Cognito sign-in (the `tagging` Lambda signs in to Cloud Run as a machine client). The query APIs come next.
+The backbone works end to end: website → upload to S3 → inference with the real model → DynamoDB. The website, the AWS API and the inference service require a Cognito sign-in (the `tagging` Lambda signs in to Cloud Run as a machine client). On top of it are search (by tags, lost pets, a thumbnail back to its original), tag editing and deletion, thumbnails, email notifications and a Lex chatbot.
 
 | Part | Status |
 |---|---|
@@ -21,6 +21,10 @@ The backbone works end to end: website → upload to S3 → inference with the r
 | Videos: one frame every 10 seconds, up to 3 minutes | Deployed |
 | `POST /subscriptions` (subscribe to email notifications per species, SNS) | Deployed, Cognito sign-in required |
 | Email notifications: `notify` Lambda on the DynamoDB Stream emails subscribers when a file gains a species they chose | Deployed |
+| `POST /search`: files with every given species (logical AND), lost pet search, thumbnail URL → original (see [`POST /search`](#post-search-lost-pet-thumbnail-url-original)) | Deployed, Cognito sign-in required |
+| Lost pet tab (`web/lostpet.js`): search by species, colour and days, or from a photo | Deployed |
+| `POST /tags` (add or remove tags) and `POST /delete` (delete files with their thumbnails and items), buttons on the library cards | Deployed, Cognito sign-in required |
+| Chatbot: floating chat window on every page → `POST /chat` → `chat` Lambda → Lex V2 bot `AussieEcoGuardBot` → `search` Lambda (see [`POST /chat`](#post-chat-chatbot)) | Deployed, Cognito sign-in required. The bot itself is made in the Lex console, not by Terraform (see [Chatbot (Lex bot)](#chatbot-lex-bot)) |
 
 ## Model selection
 
@@ -150,6 +154,42 @@ terraform -chdir=infra/terraform/aws init -reconfigure -backend-config="bucket=a
 
 Switch back to the shared deployment with `terraform -chdir=infra/terraform/aws init -reconfigure`.
 
+#### Another AWS account (e.g. for marking)
+
+Someone outside the team (a tutor or marker) can deploy the whole AWS side in their own account. Two things in the repository point at the team's account and must be changed first:
+
+1. **Terraform state.** The `backend "s3"` block in `infra/terraform/aws/versions.tf` names the team's bucket `aussie-ecoguard-tfstate-908203539695`, which other accounts cannot read, so `init` fails with `AccessDenied`. Either create a state bucket in your account and point `init` at it (the four commands in [Your own copy](#your-own-copy)), or, for a one-off deploy, delete the whole `backend "s3" { ... }` block from `versions.tf` and run `terraform -chdir=infra/terraform/aws init`. Terraform then keeps the state in a local `terraform.tfstate` file (git-ignored); keep that file until you have run `destroy`.
+2. **Lex bot.** `lex_bot_id` in `infra/terraform/aws/variables.tf` defaults to the team's bot `2VC6CJK2LJ`. Import your own copy of the bot and set its ID as below, or the chat window answers "The chatbot is not available right now".
+
+Then follow [AWS (everyone)](#aws-everyone) from step 2. Everything else is named after your account ID, so it does not clash with the team's copy. Uploads use the team's shared inference service, which only accepts tokens from user pools it trusts: until your pool is added, uploads become `FAILED` with `inference returned 401` (see [Troubleshooting](#troubleshooting)).
+
+#### Chatbot (Lex bot)
+
+The Lex V2 bot `AussieEcoGuardBot` was built in the Lex console, so Terraform does not create it. Its export is committed unzipped in `infra/lex/` (`Manifest.json` and `AussieEcoGuardBot/`): the intents `FindSightings` (slots `Species` and `Date`) and `FindLostPet` (slots `Species` and `Colour`), the custom slot type `AnimalSpecies` (the species and their plurals) and `FallbackIntent`. `Date` uses the built-in type `AMAZON.Date` and `Colour` the built-in `AMAZON.AlphaNumeric`, so `AnimalSpecies` is the only slot type file. Terraform only needs the bot's ID: it creates the `chat` Lambda that calls the bot and the permission for the bot to run the `search` Lambda.
+
+The team's bot already exists in the shared account. To set the bot up in another account (all in `ap-southeast-2`):
+
+1. Zip the export. `Manifest.json` must be at the top of the zip, so zip from inside the folder (the zip is git-ignored):
+
+   ```bash
+   cd infra/lex && zip -r ../AussieEcoGuardBot.zip . -x '*.DS_Store' && cd ../..
+   ```
+
+2. In the [Lex V2 console](https://ap-southeast-2.console.aws.amazon.com/lexv2/home?region=ap-southeast-2#bots) → **Bots** → **Action** → **Import**. Bot name `AussieEcoGuardBot`, upload `infra/AussieEcoGuardBot.zip`, choose **Create a role with basic Amazon Lex permissions**, answer **No** to the COPPA question, then **Import**.
+3. Open the bot and copy its **ID** (10 characters) from the bot details.
+4. Add the ID to `infra/terraform/aws/terraform.tfvars`. The alias stays the built-in test alias `TSTALIASID` (`lex_bot_alias_id`), which serves the latest build of the Draft version:
+
+   ```hcl
+   lex_bot_id = "<your bot ID>"
+   ```
+
+   `terraform -chdir=infra/terraform/aws apply -var lex_bot_id=<your bot ID>` works too, but then every later `apply` needs the same `-var`; without it, Terraform points the `chat` Lambda back at the team's bot.
+5. Run `terraform -chdir=infra/terraform/aws apply`. This creates the `search` and `chat` Lambdas the bot needs.
+6. Connect the bot to the `search` Lambda (the export does not include this): in the bot, **Aliases** → **TestBotAlias** → **Languages** → **English (US)** → Lambda function **Source** `aussie-ecoguard-search`, **version** `$LATEST` → **Save**.
+7. **Intents** (English (US)) → **Build**, and wait for "Successfully built". Then **Test** in the console with `show me fox photos` and `help me find a lost ginger cat`. A reply that starts with "I found" or "I didn't find" means the bot reached the `search` Lambda.
+
+After a change made in the console (new utterances, a slot), build again and export the bot (**Action** → **Export**, format Lex JSON); unzip the export over `infra/lex/` and commit it, so the repository stays the source of the bot.
+
 ### GCP (only the person hosting the inference service)
 
 1. Log in:
@@ -170,12 +210,12 @@ Switch back to the shared deployment with `terraform -chdir=infra/terraform/aws 
 | File | What it defines |
 |---|---|
 | `aws/versions.tf` | Terraform and provider versions, AWS region (`local.region`), default tags |
-| `aws/iam.tf` | The execution role shared by every Lambda |
-| `aws/variables.tf` | `inference_url` |
+| `aws/iam.tf` | The execution role shared by every Lambda, plus `lex:RecognizeText` on the one bot alias for `chat` |
+| `aws/variables.tf` | `inference_url`, `lex_bot_id`, `lex_bot_alias_id` |
 | `aws/storage.tf` | Media and website buckets, DynamoDB table and its stream |
 | `aws/tagging.tf` | EventBridge rule, SQS queue + dead-letter queue, `tagging` Lambda and its queue trigger |
 | `aws/thumbnails.tf` | Pillow and ffmpeg layers, `thumbnail` Lambda, and its target on the EventBridge rule |
-| `aws/api.tf` | REST API routes and the `upload-url`, `files` and `subscribe` Lambdas |
+| `aws/api.tf` | REST API routes and the `upload-url`, `files`, `subscribe`, `edit-tags`, `delete-files`, `search` and `chat` Lambdas, plus Lex's permission to run `search` |
 | `aws/notifications.tf` | SNS topic for email notifications, the `notify` Lambda and its stream trigger |
 | `aws/cognito.tf` | Cognito user pool, app client, sign-in domain and the smoke test's user |
 | `aws/website.tf` | Uploads `web/` and `config.js` |
@@ -185,6 +225,7 @@ Switch back to the shared deployment with `terraform -chdir=infra/terraform/aws 
 | `gcp/gcp.tf` | Model bucket, image repository and build, Cloud Run service, GCP APIs and permissions |
 | `gcp/outputs.tf` | `inference_url`, model bucket, current image |
 | `*/terraform.tfvars.example` | Templates for your `terraform.tfvars` (git-ignored) |
+| `../lex/` (not Terraform) | Export of the Lex bot, imported by hand (see [Chatbot (Lex bot)](#chatbot-lex-bot)) |
 
 The two S3 buckets are created and deleted with the aws CLI (`terraform_data` in `aws/storage.tf`), not `aws_s3_bucket`. This started as the Week 11 lab's workaround for Learner Lab, which blocks `s3:GetBucketObjectLockConfiguration`, a permission `aws_s3_bucket` needs on every read, and was kept after the move to personal accounts. Their settings (CORS, events, website, policy) are normal Terraform resources. As a result, Terraform does not notice if a bucket is deleted by hand; `terraform apply -replace=terraform_data.media_bucket` creates it again.
 
@@ -195,7 +236,7 @@ The two S3 buckets are created and deleted with the aws CLI (`terraform_data` in
 | AWS | Media bucket (private) | `aussie-ecoguard-media-<account-id>` |
 | AWS | Website bucket (public read, static hosting) | `aussie-ecoguard-web-<account-id>`. Open it via the `website_https_url` output: browser SHA-256 (`crypto.subtle`) needs HTTPS |
 | AWS | DynamoDB table | `aussie-ecoguard-media`, with GSI `tag-count-index`, TTL on `expires_at` and a stream (`NEW_IMAGE`) read by `notify` |
-| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe`, `aussie-ecoguard-notify` (role: `aussie-ecoguard-lambda`) |
+| AWS | Lambdas | `aussie-ecoguard-upload-url`, `aussie-ecoguard-tagging`, `aussie-ecoguard-files`, `aussie-ecoguard-subscribe`, `aussie-ecoguard-notify`, `aussie-ecoguard-edit-tags`, `aussie-ecoguard-delete-files`, `aussie-ecoguard-search`, `aussie-ecoguard-chat` (role: `aussie-ecoguard-lambda`) |
 | AWS | IAM role | `aussie-ecoguard-lambda`, the execution role of every Lambda, with the AWS managed policies for CloudWatch Logs, SQS triggers, S3, DynamoDB and SNS |
 | AWS | REST API | `aussie-ecoguard-api`, stage `api` |
 | AWS | Cognito user pool | `aussie-ecoguard-users` with app client `aussie-ecoguard-web` and sign-in domain `aussie-ecoguard-<account-id>` (managed login pages). Users sign up themselves with their email. A second, machine client `aussie-ecoguard-tagging` (client credentials, scope `aussie-ecoguard/infer` from resource server `aussie-ecoguard`) gives the `tagging` Lambda its tokens for Cloud Run; its secret is in the Lambda's environment variables |
@@ -204,6 +245,7 @@ The two S3 buckets are created and deleted with the aws CLI (`terraform_data` in
 | AWS | EventBridge rule | `aussie-ecoguard-upload-created`: new objects under `uploads/` in the media bucket → tagging queue and `thumbnail` Lambda |
 | AWS | Thumbnail Lambda and layer | `aussie-ecoguard-thumbnail` (role: `aussie-ecoguard-lambda`) with the layers `aussie-ecoguard-pillow` (Pillow 11.3.0) and `aussie-ecoguard-ffmpeg` (imageio-ffmpeg 0.6.0, ffmpeg 7.0.2) |
 | AWS | SQS queues | `aussie-ecoguard-tagging` (read by the `tagging` Lambda, at most 2 at a time) and its dead-letter queue `aussie-ecoguard-tagging-dlq` |
+| AWS (console, not Terraform) | Lex V2 bot | `AussieEcoGuardBot`, alias `TestBotAlias` (`TSTALIASID`) with `aussie-ecoguard-search` as its Lambda (see [Chatbot (Lex bot)](#chatbot-lex-bot)) |
 | GCP (shared) | Cloud Run service | `aussie-ecoguard-inference` in `us-east4`, public. It was chosen to sit next to AWS when AWS ran in `us-east-1`; AWS now runs in `ap-southeast-2` |
 | GCP (shared) | Model bucket (private) | `aussie-ecoguard-models-<project-number>`, one folder per model version |
 | GCP (shared) | Image repository | Artifact Registry `aussie-ecoguard`; keeps the 2 newest images (each ~0.7 GB; the free tier is 0.5 GB) |
@@ -366,6 +408,23 @@ Each user has one subscription. Subscribing again replaces their species.
 
 Like `/upload-url`, it has an `OPTIONS` method for the CORS preflight. To stop the emails, users click the unsubscribe link at the bottom of any SNS email.
 
+### `POST /tags` and `POST /delete` (edit tags, delete files)
+
+The **Edit tags** and **Delete** buttons on the library cards (`web/library.js`) call these. Both need the Cognito sign-in and send `Access-Control-Allow-Origin: *` on every reply, errors included, so the browser can read them. `urls` is a list of file URLs or bare SHA-256s: each function keeps the last path segment without its query string.
+
+| Route | Body | What it does |
+|---|---|---|
+| `POST /tags` (`edit-tags` Lambda) | `{"urls": ["<sha256>"], "operation": 1, "tags": {"fox": 2}}` | `operation` `1` adds the tags with their counts, in one transaction that fails if a file has no `META` item. `0` removes them; tags a file does not have are ignored |
+| `POST /delete` (`delete-files` Lambda) | `{"urls": ["<sha256>"]}` | Deletes `uploads/<sha256>` and `thumbnails/<sha256>.jpg` from the media bucket, then every DynamoDB item of the file (`META` and `TAG#`) |
+
+| Status | Meaning | Body |
+|---|---|---|
+| 200 | Done | `{"message": "Tags updated successfully"}` or `{"message": "Files deleted successfully"}` |
+| 400 | Body is not JSON, a field is missing, `operation` is not 0 or 1, or (add) a file does not exist | `{error}` (plus `details` for a failed transaction) |
+| 500 | DynamoDB or S3 failed | `{error, details}` |
+
+Adding a tag the file did not have yet writes a new `TAG#` item, so it also triggers [notification emails](#notification-emails-notify-lambda) for that species.
+
 ### `POST /search` (lost pet, thumbnail URL → original)
 
 The `search` Lambda takes three kinds of body. All need the Cognito sign-in and answer with `Access-Control-Allow-Origin: *`.
@@ -377,6 +436,33 @@ The `search` Lambda takes three kinds of body. All need the Cognito sign-in and 
 | `{"thumbnail_url": "https://<bucket>.s3.<region>.amazonaws.com/thumbnails/<sha256>.jpg?..."}` | The original: `{file_id, filename, file_type, file_url, thumbnail_url}`. A signed, unsigned or expired URL and the bare key all work. 400 if it is not a thumbnail URL, 404 if no ready file has that thumbnail |
 
 The website's **Lost pet** tab (`web/lostpet.js`) runs the last two. "Use a photo" fills in the species and colours from `detectFile(file)` and searches, so the photo is never stored. Clicking a result opens the full-size file.
+
+### `POST /chat` (chatbot)
+
+The floating chat window (`web/chat.js`, on every page) sends each message here. Needs the Cognito sign-in. The full flow is in [architecture/README.md](architecture/README.md).
+
+```json
+{"text": "show me fox photos from yesterday", "sessionId": "<random per browser tab>"}
+```
+
+1. The `chat` Lambda sends the text to the Lex bot (`RecognizeText`, locale `en_US`, time zone `Australia/Melbourne` so "yesterday" is the user's yesterday). The Lex session is the user's Cognito `sub` plus `sessionId`, so users never share a conversation.
+2. Lex picks the intent and fills the slots, then runs the `search` Lambda as its code hook (an event with `sessionState` goes to `handle_lex_request`, not the API code).
+3. `search` finds the files, newest first, and answers with one sentence plus at most 12 files in the session attribute `results` (S3 keys only). It also reads the sentence itself, so "fox photos", "wallabies", "last week" or "ginger" work even when Lex fills a slot badly or leaves it empty.
+4. `chat` signs the keys and returns them; the chat window shows them as thumbnails that open the file.
+
+| Intent | Example questions | What it finds |
+|---|---|---|
+| `FindSightings` | "show me the fox photos", "find kangaroos", "show me all photos of foxes spotted yesterday", "rabbits last week" | Files tagged with that species, optionally within the date (`Date` slot or a date in the sentence) |
+| `FindLostPet` | "help me find a lost ginger cat", "I lost my dog", "my rabbit is missing" | Sightings of that species in everyone's files, optionally of that colour (ginger → `orange`), like the **Lost pet** tab |
+| `FallbackIntent` | anything else | Also sent to `search`: if the sentence names a species it searches anyway, otherwise it lists the species it knows |
+
+| Status | Meaning | Body |
+|---|---|---|
+| 200 | Lex answered | `{message, intent, results: [{file_id, filename, file_type, created_at, thumbnail_url, file_url}]}` (`results` is empty when nothing matched) |
+| 400 | Body is not a JSON object, `text` is empty, or longer than 1024 characters | `{error}` |
+| 502 | Lex refused the call: wrong `lex_bot_id`, the bot is not built, or a Lex outage. The reason is only in the `chat` Lambda's CloudWatch log | `{error: "The chatbot is not available right now. ..."}` |
+
+`tests/test_lex.py` covers both Lambdas' chatbot code without AWS.
 
 ### Notification emails (`notify` Lambda)
 
@@ -470,11 +556,11 @@ This checks the deployed system end to end and needs valid credentials. Run it a
 ./scripts/smoke_test.sh
 ```
 
-It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of all three routes, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the `thumbnail` Lambda saved `thumbnails/<sha256>.jpg`, that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and a `thumb_url` that downloads, and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API and the inference service. Afterwards it deletes its test object, its thumbnail and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
+It reads the endpoint from the Terraform outputs (so run it on the machine that ran `apply`) and uploads `tests/fixtures/smoke_cat.jpg` with 16 random bytes appended, so the checksum is new on every run. It signs in as the Cognito test user (`smoke-test@example.com`, see [What Terraform creates](#what-terraform-creates)) with `aws cognito-idp admin-initiate-auth` and sends the ID token with every API call, like the website. It checks that the tagging queue trigger is enabled, that the test user can sign in, the CORS preflights of `/upload-url`, `/files` and `/files/{sha256}`, that Cloud Run refuses `/infer` without the machine token and that `/detect` (preflight, 401 without a token) finds the cat in the test photo, that API Gateway's own errors carry a CORS header, `POST /upload-url`, the presigned `PUT`, that different content is rejected on the same URL, that tagging makes the file `READY` with `TAG#` items and `owner` set to the test user (it waits up to 3 minutes, enough for a cold start), that the `thumbnail` Lambda saved `thumbnails/<sha256>.jpg`, that the same file then gets 409, that `GET /files/{sha256}` shows it `READY` with tags and a `thumb_url` that downloads, and `GET /files` lists it (unknown SHA-256 → 404, invalid → 400), that bad requests return 400, and that the website is served with a `config.js` pointing at this deployment's API and the inference service. Afterwards it deletes its test object, its thumbnail and every DynamoDB item of it (`META` and `TAG#`). It exits with 0 only if every check passes.
 
 ### Website
 
-Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.ap-southeast-2.amazonaws.com/index.html`). Use this regional address: sign-in only returns to it, and the media bucket's CORS only allows it. The page uses Bootstrap 5 from a CDN and has one tab per feature; so far only **Library**. Besides sign-in, it has two independent parts that share no data:
+Open the `website_https_url` output (`https://aussie-ecoguard-web-<account-id>.s3.ap-southeast-2.amazonaws.com/index.html`). Use this regional address: sign-in only returns to it, and the media bucket's CORS only allows it. The page uses Bootstrap 5 from a CDN and has one tab per feature: **Library**, **Notifications** and **Lost pet**, plus a floating chat window (`web/chat.js`, see [`POST /chat`](#post-chat-chatbot)) on every tab. Besides sign-in, it has two independent parts that share no data:
 
 - **Sign-in** (`web/auth.js`) runs before the other scripts and keeps the page hidden until the user is signed in with Cognito. Every API call goes through its `apiFetch(path, options)`, a `fetch()` that adds the ID token in the `Authorization` header; **use it for any new API call**, or the request will be refused once the API requires sign-in. Do not use it for the presigned S3 URLs, which carry their own signature.
 - **Detect** (`web/detect.js`) has no UI of its own. `detectFile(file)` sends an image to Cloud Run `POST /detect` with the user's ID token and returns `{tags, attributes, model}`; the image is never stored. It is for the searches that start from a file (same tags as a file, lost pet by photo):
@@ -628,6 +714,9 @@ The GCP APIs stay enabled (`disable_on_destroy = false`), since other things in 
 | Scripts print `No outputs found`, or `apply` fails because the resources already exist | Terraform is not reading the shared state: run `terraform -chdir=infra/terraform/aws init` (after `git pull`) and check that `aws sts get-caller-identity` shows the shared account. Never answer `yes` when `init` offers to copy a local state over it |
 | `Error acquiring the state lock` | Someone else is running `plan` or `apply`; wait and retry. If a run crashed and left the lock behind, run `terraform -chdir=infra/terraform/aws force-unlock <lock ID from the error>`, but only after checking that nobody is still applying |
 | Shared state was overwritten or broken | The state bucket keeps old versions: in the S3 console, open `aws/terraform.tfstate` → **Versions** and download the last good one, then upload it as the current version |
+| `terraform init` fails with `AccessDenied` on `aussie-ecoguard-tfstate-908203539695` | You are not in the team's account, and the `backend "s3"` block names the team's state bucket. Use your own bucket or remove the block (see [Another AWS account](#another-aws-account-eg-for-marking)) |
+| The chat window answers "The chatbot is not available right now" | `/aws/lambda/aussie-ecoguard-chat` has the reason. `ResourceNotFoundException`: `lex_bot_id` is not a bot in this account (import the bot and set its ID, see [Chatbot (Lex bot)](#chatbot-lex-bot)). `AccessDeniedException`: the role's `lex-recognize-text` policy names another bot; `apply` again after changing `lex_bot_id`. A message that the bot or locale is not built: **Build** it in the Lex console |
+| The chat answers but never finds anything, or Lex's console test shows an error about the code hook | `TestBotAlias` has no Lambda, or the bot was not built after setting it. Do steps 6 and 7 of [Chatbot (Lex bot)](#chatbot-lex-bot). If `/aws/lambda/aussie-ecoguard-search` has no log line for the message, also check that `apply` ran with your `lex_bot_id` (it creates Lex's permission to run `search`) |
 | `/infer` returns `502 could not download file (S3 returned 400)` for a URL from `aws s3 presign` | `aws s3 presign` signs offline, even with expired credentials, and S3 then answers `ExpiredToken`. Refresh the credentials and presign again |
 | The first upload after a quiet period takes about a minute | Cloud Run scaled to zero, and a new instance downloads and loads the models first (`Downloaded ... in` and `Loaded models in` in its logs). Later uploads are fast. `--min-instances 1` would avoid it but is billed all the time |
 | A new Cloud Run revision does not start; its logs show `no model files under gs://...` or a 403 from Cloud Storage | The version folder does not exist (run `./infra/upload_model.sh <version>`), or the service account lost read access to the model bucket (running `upload_model.sh` again adds it back) |

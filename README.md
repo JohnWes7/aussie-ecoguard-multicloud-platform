@@ -17,6 +17,25 @@ This was a three-person group project for Monash University FIT3184 (2026). I (Y
 
 My teammates built the email notifications, thumbnails, the search / tag / delete APIs, the lost-pet search and the Lex chatbot. Who built what, with commit hashes: [CONTRIBUTIONS.md](CONTRIBUTIONS.md).
 
+## Screenshots
+
+| Library: every upload tagged by the ML pipeline | Chatbot (Amazon Lex) |
+|---|---|
+| ![Library cards with species and colour tags](doc/screenshots/library-camera-trap-and-pets.jpg) | ![Chatbot answering "show me the fox photos" with thumbnails](doc/screenshots/chatbot.jpg) |
+| **Search with counts (logical AND)** | **Lost pet search by species and colour** |
+| ![Search for "3 dogs and 2 cats"](doc/screenshots/search-and.jpg) | ![Lost pet tab finding orange cats](doc/screenshots/lost-pet.jpg) |
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![Library page with upload panel](doc/screenshots/library.jpg) | ![Library cards of wildlife](doc/screenshots/library-wildlife.jpg) |
+| ![Search for "fox"](doc/screenshots/search-fox.jpg) | ![Chatbot finding a lost ginger cat](doc/screenshots/chatbot-lost-pet.jpg) |
+| ![Email notification subscriptions by species](doc/screenshots/notifications.jpg) | |
+
+</details>
+
 The full design is in [architecture/README.md](architecture/README.md). This README covers how to deploy and test what is built so far.
 
 ## Current status

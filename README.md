@@ -2,6 +2,12 @@
 
 A multi-cloud, serverless platform for storing camera-trap photos and videos and finding them by detected species (pests and pets). AWS hosts the web app, API, storage and database; GCP Cloud Run runs ML inference.
 
+## Architecture
+
+![Architecture: AWS (S3 website, Cognito, API Gateway, Lambda, S3 media bucket, EventBridge, SQS, DynamoDB, SNS, Lex) calling a Cloud Run inference service on GCP](architecture/architecture.png)
+
+Upload flow: the browser computes the file's SHA-256 → `POST /upload-url` (deduplication) → presigned PUT straight to S3 → EventBridge → SQS → `tagging` Lambda → Cloud Run (MegaDetector → SpeciesNet → CLIP) → tags in DynamoDB. Only AWS calls GCP, with a Cognito machine-to-machine token, so GCP holds no AWS credentials. Full design: [architecture/README.md](architecture/README.md).
+
 ## My role
 
 This was a three-person group project for Monash University FIT3184 (2026). I (Yijiang Luo) designed the architecture and built the backbone that the rest of the team built their features on:

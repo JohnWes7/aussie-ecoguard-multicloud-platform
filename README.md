@@ -2,6 +2,21 @@
 
 A multi-cloud, serverless platform for storing camera-trap photos and videos and finding them by detected species (pests and pets). AWS hosts the web app, API, storage and database; GCP Cloud Run runs ML inference.
 
+## My role
+
+This was a three-person group project for Monash University FIT3184 (2026). I (Yijiang Luo) designed the architecture and built the backbone that the rest of the team built their features on:
+
+- **Architecture**: multi-cloud design (AWS + GCP), service choices, single-table DynamoDB data model and the architecture diagram ([architecture/](architecture/README.md))
+- **Infrastructure as code**: all AWS and GCP infrastructure in Terraform, with remote S3 state and locking (migrated from CloudFormation)
+- **Upload and tagging pipeline**: SHA-256 deduplicated uploads through presigned S3 URLs; S3 → EventBridge → SQS (with a dead-letter queue) → Lambda → Cloud Run → DynamoDB, with retries and failure status
+- **ML inference service**: compared 10 detection/classification pipelines on a hand-labelled test set, then deployed the chosen MegaDetector → SpeciesNet → CLIP pipeline on Cloud Run (FastAPI), including video support
+- **Security**: Cognito sign-in for the website and every API route; machine-to-machine OAuth (client credentials, JWKS verification) for AWS → GCP calls, so GCP holds no AWS credentials
+- **Website core**: upload panel and file library
+- **Testing and documentation**: unit tests (pytest + moto), an end-to-end smoke test, and the deployment and API docs
+- **Technical lead**: split the work into areas, reviewed and merged merge requests, and ran the shared deployment
+
+My teammates built the email notifications, thumbnails, the search / tag / delete APIs, the lost-pet search and the Lex chatbot. Who built what, with commit hashes: [CONTRIBUTIONS.md](CONTRIBUTIONS.md).
+
 The full design is in [architecture/README.md](architecture/README.md). This README covers how to deploy and test what is built so far.
 
 ## Current status

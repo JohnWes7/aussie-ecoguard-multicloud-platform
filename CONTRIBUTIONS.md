@@ -101,11 +101,8 @@ Short entries, newest first: date, who, what (claims, merges, task changes).
 | Date | Who | Entry |
 |---|---|---|
 | 2026-11-02 | Thanh Tri Le | Video thumbnails deployed (`terraform apply`: ffmpeg layer added, `thumbnail`, `tagging`, `files` and `library.js` updated) and tested live: a 4 s cat clip got `thumbnails/<sha256>.jpg` (25 KB, 1.2 s in the Lambda) and its library card shows the frame |
-<<<<<<< ours
-=======
 | 2026-11-02 | Thanh Tri Le | Built video thumbnails (the library had no preview for videos). Needs `terraform apply`: one new resource set (ffmpeg layer) and changes to the `thumbnail` and `tagging` Lambdas; videos uploaded before this keep showing the browser's first frame |
 | 2026-11-02 | Thanh Tri Le | Chatbot fixes deployed and tested live ("show me the fox photos" returns the fox files as clickable thumbnails; "foxes spotted yesterday" filters by date). Added the `Date` slot and `FindLostPet` intent in the Lex console, rebuilt the bot, and exported it to `infra/lex/` |
->>>>>>> theirs
 | 2026-11-02 | Thanh Tri Le | Chatbot fixes after a live test: "show me fox photos" found nothing because the slot held "fox photos". Fixed in the `search` Lambda, plus dates, lost pets and clickable thumbnails in the chat. Needs `terraform apply` and the Lex console steps in the merge request |
 | 2026-11-02 | Thanh Tri Le | Built the two Query API features that were still missing, lost pet search and thumbnail URL → original, in the `search` Lambda plus a Lost pet tab. Needs `terraform apply` (no new resources, only the `search` Lambda code and the website files) |
 | 2026-11-01 | Leon | Fixed Lex case-sensitivity and plural mapping bugs (e.g., "foxes" now correctly maps to "fox"). Replaced long Presigned URLs in Lex chat with clickable links that redirect to the frontend search page. Fixed frontend JSON parsing of API Gateway responses to render tags and filenames correctly. |
